@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private player game state, upgrades, cat customization, daily streak, quests, and badges.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Authenticated Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "Player nickname for display." },
+        "purrs": { "type": "integer", "description": "Current spendable purr currency." },
+        "totalPurrsEarned": { "type": "integer", "description": "Cumulative lifetime purrs earned." },
+        "totalPets": { "type": "integer", "description": "Cumulative lifetime cat pets/taps." },
+        "selectedCatName": { "type": "string", "description": "Custom name given to the player's cat." },
+        "selectedPatternId": { "type": "string", "description": "Equipped cat coat pattern ID." },
+        "selectedAccessoryId": { "type": "string", "description": "Equipped cat accessory ID." },
+        "unlockedPatterns": { "type": "array", "description": "List of unlocked pattern IDs." },
+        "unlockedAccessories": { "type": "array", "description": "List of unlocked accessory IDs." },
+        "upgradeLevels": { "type": "object", "description": "Map of shop upgrade ID to owned level." },
+        "dailyStreak": { "type": "integer", "description": "Current daily login reward streak." },
+        "lastDailyClaimEpochDay": { "type": "integer", "description": "UTC epoch day of the last claimed daily reward." },
+        "claimedQuestIds": { "type": "array", "description": "List of claimed quest IDs." },
+        "unlockedBadgeIds": { "type": "array", "description": "List of unlocked achievement badge IDs." },
+        "equippedBadgeId": { "type": "string", "description": "Equipped badge ID shown on leaderboard." },
+        "eventPurrsEarned": { "type": "integer", "description": "Purrs earned during periodic limited-time events." },
+        "preferredCity": { "type": "string", "description": "Selected weather city name." },
+        "weatherCheckedCount": { "type": "integer", "description": "Number of live weather syncs completed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of profile creation (client writes FieldValue.serverTimestamp())." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last save (client writes FieldValue.serverTimestamp())." }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "purrs",
+        "totalPurrsEarned",
+        "totalPets",
+        "selectedCatName",
+        "selectedPatternId",
+        "selectedAccessoryId",
+        "unlockedPatterns",
+        "unlockedAccessories",
+        "upgradeLevels",
+        "dailyStreak",
+        "lastDailyClaimEpochDay",
+        "claimedQuestIds",
+        "unlockedBadgeIds",
+        "equippedBadgeId",
+        "eventPurrsEarned",
+        "preferredCity",
+        "weatherCheckedCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public non-PII global leaderboard showcase entry for a feline enthusiast.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "Public player nickname." },
+        "catName": { "type": "string", "description": "Public cat name." },
+        "catPatternId": { "type": "string", "description": "Equipped cat pattern ID." },
+        "catAccessoryId": { "type": "string", "description": "Equipped cat accessory ID." },
+        "equippedBadgeId": { "type": "string", "description": "Equipped exclusive badge ID." },
+        "totalPurrsEarned": { "type": "integer", "description": "Total lifetime purrs used for global ranking." },
+        "totalPets": { "type": "integer", "description": "Total lifetime pets." },
+        "badgesCount": { "type": "integer", "description": "Number of unlocked achievement badges." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last leaderboard sync." }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "catName",
+        "catPatternId",
+        "catAccessoryId",
+        "equippedBadgeId",
+        "totalPurrsEarned",
+        "totalPets",
+        "badgesCount",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private per-user game state and profile."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public non-PII global leaderboard entries."
+    }
+  }
+}

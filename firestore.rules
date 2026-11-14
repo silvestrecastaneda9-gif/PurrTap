@@ -1,0 +1,166 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidStringList(list, maxLen) {
+      return list is list && list.size() <= maxLen && (list.size() == 0 || list[0] is string);
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.displayName is string &&
+             data.displayName.size() >= 1 &&
+             data.displayName.size() <= 40 &&
+             data.purrs is int && data.purrs >= 0 &&
+             data.totalPurrsEarned is int && data.totalPurrsEarned >= 0 &&
+             data.totalPets is int && data.totalPets >= 0 &&
+             data.selectedCatName is string &&
+             data.selectedCatName.size() >= 1 &&
+             data.selectedCatName.size() <= 24 &&
+             data.selectedPatternId is string &&
+             data.selectedPatternId.size() >= 1 &&
+             data.selectedPatternId.size() <= 32 &&
+             data.selectedAccessoryId is string &&
+             data.selectedAccessoryId.size() >= 1 &&
+             data.selectedAccessoryId.size() <= 32 &&
+             isValidStringList(data.unlockedPatterns, 24) &&
+             isValidStringList(data.unlockedAccessories, 24) &&
+             data.upgradeLevels is map && data.upgradeLevels.size() <= 32 &&
+             data.dailyStreak is int && data.dailyStreak >= 0 && data.dailyStreak <= 3650 &&
+             data.lastDailyClaimEpochDay is int && data.lastDailyClaimEpochDay >= 0 &&
+             isValidStringList(data.claimedQuestIds, 64) &&
+             isValidStringList(data.unlockedBadgeIds, 64) &&
+             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 40 &&
+             data.eventPurrsEarned is int && data.eventPurrsEarned >= 0 &&
+             data.preferredCity is string && data.preferredCity.size() <= 80 &&
+             data.weatherCheckedCount is int && data.weatherCheckedCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.displayName is string &&
+             data.displayName.size() >= 1 &&
+             data.displayName.size() <= 40 &&
+             data.catName is string &&
+             data.catName.size() >= 1 &&
+             data.catName.size() <= 24 &&
+             data.catPatternId is string &&
+             data.catPatternId.size() >= 1 &&
+             data.catPatternId.size() <= 32 &&
+             data.catAccessoryId is string &&
+             data.catAccessoryId.size() >= 1 &&
+             data.catAccessoryId.size() <= 32 &&
+             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 40 &&
+             data.totalPurrsEarned is int && data.totalPurrsEarned >= 0 &&
+             data.totalPets is int && data.totalPets >= 0 &&
+             data.badgesCount is int && data.badgesCount >= 0 && data.badgesCount <= 64 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'purrs', 'totalPurrsEarned', 'totalPets',
+                         'selectedCatName', 'selectedPatternId', 'selectedAccessoryId',
+                         'unlockedPatterns', 'unlockedAccessories', 'upgradeLevels',
+                         'dailyStreak', 'lastDailyClaimEpochDay', 'claimedQuestIds',
+                         'unlockedBadgeIds', 'equippedBadgeId', 'eventPurrsEarned',
+                         'preferredCity', 'weatherCheckedCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'purrs', 'totalPurrsEarned', 'totalPets',
+                         'selectedCatName', 'selectedPatternId', 'selectedAccessoryId',
+                         'unlockedPatterns', 'unlockedAccessories', 'upgradeLevels',
+                         'dailyStreak', 'lastDailyClaimEpochDay', 'claimedQuestIds',
+                         'unlockedBadgeIds', 'equippedBadgeId', 'eventPurrsEarned',
+                         'preferredCity', 'weatherCheckedCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().totalPurrsEarned >= existing().totalPurrsEarned &&
+                       incoming().totalPets >= existing().totalPets &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'purrs', 'totalPurrsEarned', 'totalPets',
+                         'selectedCatName', 'selectedPatternId', 'selectedAccessoryId',
+                         'unlockedPatterns', 'unlockedAccessories', 'upgradeLevels',
+                         'dailyStreak', 'lastDailyClaimEpochDay', 'claimedQuestIds',
+                         'unlockedBadgeIds', 'equippedBadgeId', 'eventPurrsEarned',
+                         'preferredCity', 'weatherCheckedCount', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    match /leaderboard/{entryId} {
+      allow get: if isSignedIn() && isValidId(entryId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(entryId) &&
+                       request.auth.uid == entryId &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'catName', 'catPatternId', 'catAccessoryId',
+                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'catName', 'catPatternId', 'catAccessoryId',
+                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount', 'updatedAt'
+                       ]) &&
+                       isValidLeaderboardEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(entryId) &&
+                       request.auth.uid == entryId &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().totalPurrsEarned >= existing().totalPurrsEarned &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'catName', 'catPatternId', 'catAccessoryId',
+                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(entryId) && request.auth.uid == entryId;
+    }
+  }
+}

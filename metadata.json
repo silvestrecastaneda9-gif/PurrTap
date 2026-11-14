@@ -1,0 +1,6 @@
+{
+  "name": "PurrTap",
+  "description": "A cozy cat petting simulator with shop upgrades, customizable cats, live weather boosts, periodic events, quests, badges, guide, and a global leaderboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
