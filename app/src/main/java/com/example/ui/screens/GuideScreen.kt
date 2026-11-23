@@ -4,7 +4,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,22 +57,34 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.R
 import com.example.data.model.BlogPostDef
 import com.example.data.model.GameCatalog
+import com.example.ui.components.SubtleGlitchLoreWhisper
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GuideScreen() {
   var selectedSection by remember { mutableIntStateOf(0) }
   var activeBlogPostIndex by remember { mutableStateOf<Int?>(null) }
-  val sections = listOf("Update Blog", "How to Play", "FAQ")
 
-  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+  BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val isNarrow = maxWidth < 360.dp
+    val isUltraNarrow = maxWidth < 335.dp
+    val horizontalPad = if (isNarrow) 10.dp else 16.dp
+    val sections =
+      if (isUltraNarrow) listOf("Blog", "Play", "FAQ")
+      else listOf("Update Blog", "How to Play", "FAQ")
+
     Column(
-      modifier = Modifier.fillMaxSize().widthIn(max = 640.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+      modifier =
+        Modifier.fillMaxSize()
+          .widthIn(max = 640.dp)
+          .padding(horizontal = horizontalPad, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Image(
@@ -87,151 +102,161 @@ fun GuideScreen() {
             shape = SegmentedButtonDefaults.itemShape(index = index, count = sections.size),
             modifier = Modifier.testTag("guide_tab_$index"),
           ) {
-            Text(text = title, maxLines = 1)
+            Text(
+              text = title,
+              style =
+                if (isNarrow) MaterialTheme.typography.labelSmall
+                else MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+            )
           }
         }
       }
 
-      when (selectedSection) {
-        0 -> {
-          LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            itemsIndexed(GameCatalog.blogPosts, key = { _, post -> post.version }) { index, post ->
-              Card(
-                onClick = { activeBlogPostIndex = index },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth().testTag("blog_card_${post.version}"),
-              ) {
-                Column(
-                  modifier = Modifier.padding(14.dp),
-                  verticalArrangement = Arrangement.spacedBy(6.dp),
+      Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        when (selectedSection) {
+          0 -> {
+            LazyColumn(
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(bottom = 16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              itemsIndexed(GameCatalog.blogPosts, key = { _, post -> post.version }) { index, post ->
+                Card(
+                  onClick = { activeBlogPostIndex = index },
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                  modifier = Modifier.fillMaxWidth().testTag("blog_card_${post.version}"),
                 ) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                  Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    FlowRow(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                      ) {
+                        Surface(
+                          color = MaterialTheme.colorScheme.primaryContainer,
+                          shape = MaterialTheme.shapes.small,
+                        ) {
+                          Text(
+                            text = post.version,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                          )
+                        }
+                        Text(
+                          text = "${post.date} • ${post.readTimeLabel}",
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                      }
                       Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                         shape = MaterialTheme.shapes.small,
                       ) {
                         Text(
-                          text = post.version,
-                          style = MaterialTheme.typography.labelMedium,
-                          color = MaterialTheme.colorScheme.onPrimaryContainer,
-                          fontWeight = FontWeight.Bold,
+                          text = "Read Full Post",
+                          style = MaterialTheme.typography.labelSmall,
+                          fontWeight = FontWeight.SemiBold,
+                          color = MaterialTheme.colorScheme.onSecondaryContainer,
                           modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
                       }
+                    }
+                    Text(text = post.title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                      text = post.summary,
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    post.highlights.take(2).forEach { bullet ->
                       Text(
-                        text = "${post.date} • ${post.readTimeLabel}",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "• $bullet",
+                        style = MaterialTheme.typography.bodySmall,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+          1 -> {
+            LazyColumn(
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(bottom = 16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              items(GameCatalog.howToPlaySteps, key = { it.first }) { (title, body) ->
+                Card(
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                  ) {
+                    Text(
+                      text = title,
+                      style = MaterialTheme.typography.titleMedium,
+                      color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(text = body, style = MaterialTheme.typography.bodyMedium)
+                  }
+                }
+              }
+            }
+          }
+          else -> {
+            LazyColumn(
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(bottom = 16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              itemsIndexed(GameCatalog.faqItems, key = { idx, _ -> idx }) { index, item ->
+                var expanded by remember { mutableStateOf(index == 0) }
+                Card(
+                  onClick = { expanded = !expanded },
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                  modifier = Modifier.fillMaxWidth().testTag("faq_card_$index"),
+                ) {
+                  Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Text(
+                        text = item.question,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                      )
+                      Icon(
+                        imageVector =
+                          if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                      )
+                    }
+                    AnimatedVisibility(visible = expanded) {
+                      Text(
+                        text = item.answer,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                       )
                     }
-                    Surface(
-                      color = MaterialTheme.colorScheme.secondaryContainer,
-                      shape = MaterialTheme.shapes.small,
-                    ) {
-                      Text(
-                        text = "Read Full Post",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                      )
-                    }
-                  }
-                  Text(text = post.title, style = MaterialTheme.typography.titleMedium)
-                  Text(
-                    text = post.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                  post.highlights.take(2).forEach { bullet ->
-                    Text(
-                      text = "• $bullet",
-                      style = MaterialTheme.typography.bodySmall,
-                    )
-                  }
-                }
-              }
-            }
-          }
-        }
-        1 -> {
-          LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            items(GameCatalog.howToPlaySteps, key = { it.first }) { (title, body) ->
-              Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                Column(
-                  modifier = Modifier.padding(14.dp),
-                  verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                  Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                  )
-                  Text(text = body, style = MaterialTheme.typography.bodyMedium)
-                }
-              }
-            }
-          }
-        }
-        else -> {
-          LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            itemsIndexed(GameCatalog.faqItems, key = { idx, _ -> idx }) { index, item ->
-              var expanded by remember { mutableStateOf(index == 0) }
-              Card(
-                onClick = { expanded = !expanded },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth().testTag("faq_card_$index"),
-              ) {
-                Column(
-                  modifier = Modifier.padding(14.dp),
-                  verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                  ) {
-                    Text(
-                      text = item.question,
-                      style = MaterialTheme.typography.titleSmall,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.weight(1f).padding(end = 8.dp),
-                    )
-                    Icon(
-                      imageVector =
-                        if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                      contentDescription = if (expanded) "Collapse" else "Expand",
-                    )
-                  }
-                  AnimatedVisibility(visible = expanded) {
-                    Text(
-                      text = item.answer,
-                      style = MaterialTheme.typography.bodyMedium,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                   }
                 }
               }
@@ -239,6 +264,8 @@ fun GuideScreen() {
           }
         }
       }
+
+      SubtleGlitchLoreWhisper(channel = "guide")
     }
   }
 

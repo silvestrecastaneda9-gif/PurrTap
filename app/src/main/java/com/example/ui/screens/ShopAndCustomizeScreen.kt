@@ -3,7 +3,10 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,16 +52,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.GameCatalog
 import com.example.data.model.ShopUpgradeDef
 import com.example.data.model.UpgradeCategory
 import com.example.ui.components.CatAvatarMini
+import com.example.ui.components.CatBackgroundPreviewSwatch
+import com.example.ui.components.ItemHoverTooltipBox
+import com.example.ui.components.SubtleGlitchLoreWhisper
 import com.example.ui.theme.AppColorTheme
 import com.example.ui.viewmodel.PurrGameUiState
 import java.text.NumberFormat
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShopAndCustomizeScreen(
   uiState: PurrGameUiState,
@@ -65,6 +74,7 @@ fun ShopAndCustomizeScreen(
   onBuyUpgrade: (String) -> Unit,
   onSelectOrUnlockPattern: (String) -> Unit,
   onSelectOrUnlockAccessory: (String) -> Unit,
+  onSelectOrUnlockBackground: (String) -> Unit = {},
   onRenameCat: (String) -> Unit,
   onOpenInventory: () -> Unit,
   onBuyGemCharm: () -> Unit = {},
@@ -78,69 +88,116 @@ fun ShopAndCustomizeScreen(
 ) {
   var selectedTab by remember(initialSubTab) { mutableIntStateOf(initialSubTab) }
   val numberFormat = NumberFormat.getNumberInstance(Locale.US)
-  val tabs = listOf("Click", "Per Sec", "Customize", "Gems")
 
-  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+  BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val isNarrow = maxWidth < 360.dp
+    val isUltraNarrow = maxWidth < 340.dp
+    val horizontalPad = if (isNarrow) 10.dp else 16.dp
+    val tabs =
+      if (isUltraNarrow) listOf("Click", "PPS", "Style", "Gems")
+      else listOf("Click", "Per Sec", "Customize", "Gems")
+
     Column(
-      modifier = Modifier.fillMaxSize().widthIn(max = 640.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+      modifier =
+        Modifier.fillMaxSize()
+          .widthIn(max = 640.dp)
+          .padding(horizontal = horizontalPad, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = "Boutique & Upgrades", style = MaterialTheme.typography.headlineSmall)
+      val headerTitleBlock: @Composable () -> Unit = {
+        Column {
+          Text(
+            text = "Boutique & Upgrades",
+            style =
+              if (isNarrow) MaterialTheme.typography.titleLarge
+              else MaterialTheme.typography.headlineSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
           Text(
             text = "Boost tapping power or style ${uiState.profile.selectedCatName}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
-        Column(
-          horizontalAlignment = Alignment.End,
-          verticalArrangement = Arrangement.spacedBy(4.dp),
+      }
+
+      val purrsChip: @Composable () -> Unit = {
+        Surface(
+          color =
+            if (uiState.challengeState.isHardcoreMode) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.primaryContainer,
+          shape = MaterialTheme.shapes.medium,
         ) {
-          Surface(
+          Text(
+            text =
+              "${GameCatalog.formatCompactPurrs(uiState.activeCurrencyBalance)} ${uiState.activeCurrencyShortLabel}",
+            style = MaterialTheme.typography.labelLarge,
             color =
-              if (uiState.challengeState.isHardcoreMode) MaterialTheme.colorScheme.errorContainer
-              else MaterialTheme.colorScheme.primaryContainer,
-            shape = MaterialTheme.shapes.medium,
+              if (uiState.challengeState.isHardcoreMode) MaterialTheme.colorScheme.onErrorContainer
+              else MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+          )
+        }
+      }
+
+      val gemsChip: @Composable () -> Unit = {
+        Surface(
+          color = MaterialTheme.colorScheme.tertiaryContainer,
+          shape = MaterialTheme.shapes.small,
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
           ) {
+            Icon(
+              imageVector = Icons.Rounded.Diamond,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.tertiary,
+              modifier = Modifier.size(13.dp),
+            )
             Text(
-              text =
-                "${GameCatalog.formatCompactPurrs(uiState.activeCurrencyBalance)} ${uiState.activeCurrencyShortLabel}",
-              style = MaterialTheme.typography.labelLarge,
-              color =
-                if (uiState.challengeState.isHardcoreMode) MaterialTheme.colorScheme.onErrorContainer
-                else MaterialTheme.colorScheme.onPrimaryContainer,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+              text = "${numberFormat.format(uiState.challengeState.gems)} Gems",
+              style = MaterialTheme.typography.labelMedium,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onTertiaryContainer,
+              maxLines = 1,
+              modifier = Modifier.testTag("shop_gems_balance"),
             )
           }
-          Surface(
-            color = MaterialTheme.colorScheme.tertiaryContainer,
-            shape = MaterialTheme.shapes.small,
+        }
+      }
+
+      if (isNarrow) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          headerTitleBlock()
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              Icon(
-                imageVector = Icons.Rounded.Diamond,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(13.dp),
-              )
-              Text(
-                text = "${numberFormat.format(uiState.challengeState.gems)} Gems",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                modifier = Modifier.testTag("shop_gems_balance"),
-              )
-            }
+            purrsChip()
+            gemsChip()
+          }
+        }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            headerTitleBlock()
+          }
+          Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            purrsChip()
+            gemsChip()
           }
         }
       }
@@ -180,53 +237,66 @@ fun ShopAndCustomizeScreen(
             shape = SegmentedButtonDefaults.itemShape(index = index, count = tabs.size),
             modifier = Modifier.testTag("shop_tab_$index"),
           ) {
-            Text(text = title, maxLines = 1)
+            Text(
+              text = title,
+              style =
+                if (isNarrow) MaterialTheme.typography.labelSmall
+                else MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+            )
           }
         }
       }
 
-      when (selectedTab) {
-        0 -> {
-          val clickUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.CLICK }
-          UpgradeList(
-            upgrades = clickUpgrades,
-            uiState = uiState,
-            onBuyUpgrade = onBuyUpgrade,
-          )
-        }
-        1 -> {
-          val ppsUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.PER_SECOND }
-          UpgradeList(
-            upgrades = ppsUpgrades,
-            uiState = uiState,
-            onBuyUpgrade = onBuyUpgrade,
-          )
-        }
-        2 -> {
-          CustomizeCatPanel(
-            uiState = uiState,
-            numberFormat = numberFormat,
-            onSelectOrUnlockPattern = onSelectOrUnlockPattern,
-            onSelectOrUnlockAccessory = onSelectOrUnlockAccessory,
-            onRenameCat = onRenameCat,
-            onOpenInventory = onOpenInventory,
-          )
-        }
-        else -> {
-          GemVaultPanel(
-            uiState = uiState,
-            numberFormat = numberFormat,
-            onBuyGemCharm = onBuyGemCharm,
-            onActivateGemFrenzy = onActivateGemFrenzy,
-            onSummonCosmicWeather = onSummonCosmicWeather,
-            onUnlockPrismLens = onUnlockPrismLens,
-            onUnlockGemPattern = onUnlockGemPattern,
-            onUnlockGemAccessory = onUnlockGemAccessory,
-            onUnlockGemColorTheme = onUnlockGemColorTheme,
-            onForgeGatoShard = onForgeGatoShard,
-          )
+      Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        when (selectedTab) {
+          0 -> {
+            val clickUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.CLICK }
+            UpgradeList(
+              upgrades = clickUpgrades,
+              uiState = uiState,
+              onBuyUpgrade = onBuyUpgrade,
+            )
+          }
+          1 -> {
+            val ppsUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.PER_SECOND }
+            UpgradeList(
+              upgrades = ppsUpgrades,
+              uiState = uiState,
+              onBuyUpgrade = onBuyUpgrade,
+            )
+          }
+          2 -> {
+            CustomizeCatPanel(
+              uiState = uiState,
+              isNarrow = isNarrow,
+              onSelectOrUnlockPattern = onSelectOrUnlockPattern,
+              onSelectOrUnlockAccessory = onSelectOrUnlockAccessory,
+              onSelectOrUnlockBackground = onSelectOrUnlockBackground,
+              onRenameCat = onRenameCat,
+              onOpenInventory = onOpenInventory,
+            )
+          }
+          else -> {
+            GemVaultPanel(
+              uiState = uiState,
+              numberFormat = numberFormat,
+              onBuyGemCharm = onBuyGemCharm,
+              onActivateGemFrenzy = onActivateGemFrenzy,
+              onSummonCosmicWeather = onSummonCosmicWeather,
+              onUnlockPrismLens = onUnlockPrismLens,
+              onUnlockGemPattern = onUnlockGemPattern,
+              onUnlockGemAccessory = onUnlockGemAccessory,
+              onUnlockGemColorTheme = onUnlockGemColorTheme,
+              onForgeGatoShard = onForgeGatoShard,
+            )
+          }
         }
       }
+
+      SubtleGlitchLoreWhisper(channel = "shop")
     }
   }
 }
@@ -288,8 +358,9 @@ private fun UpgradeList(
               }
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
+              @OptIn(ExperimentalLayoutApi::class)
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(text = upgrade.name, style = MaterialTheme.typography.titleMedium)
@@ -332,12 +403,14 @@ private fun UpgradeList(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CustomizeCatPanel(
   uiState: PurrGameUiState,
-  numberFormat: NumberFormat,
+  isNarrow: Boolean,
   onSelectOrUnlockPattern: (String) -> Unit,
   onSelectOrUnlockAccessory: (String) -> Unit,
+  onSelectOrUnlockBackground: (String) -> Unit,
   onRenameCat: (String) -> Unit,
   onOpenInventory: () -> Unit,
 ) {
@@ -402,28 +475,149 @@ private fun CustomizeCatPanel(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth(),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(14.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          CatAvatarMini(
-            patternId = uiState.profile.selectedPatternId,
-            accessoryId = uiState.profile.selectedAccessoryId,
-            modifier = Modifier.size(64.dp),
-          )
-          OutlinedTextField(
-            value = nameInput,
-            onValueChange = { if (it.length <= 24) nameInput = it },
-            label = { Text("Cat Name") },
-            singleLine = true,
-            modifier = Modifier.weight(1f).testTag("cat_name_input"),
-          )
-          FilledTonalButton(
-            onClick = { onRenameCat(nameInput) },
-            modifier = Modifier.height(48.dp).testTag("save_cat_name_button"),
+        if (isNarrow) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            Text("Save")
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              CatAvatarMini(
+                patternId = uiState.profile.selectedPatternId,
+                accessoryId = uiState.profile.selectedAccessoryId,
+                modifier = Modifier.size(52.dp),
+              )
+              OutlinedTextField(
+                value = nameInput,
+                onValueChange = { if (it.length <= 24) nameInput = it },
+                label = { Text("Cat Name") },
+                singleLine = true,
+                modifier = Modifier.weight(1f).testTag("cat_name_input"),
+              )
+            }
+            FilledTonalButton(
+              onClick = { onRenameCat(nameInput) },
+              modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_cat_name_button"),
+            ) {
+              Text("Save Cat Name")
+            }
+          }
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            CatAvatarMini(
+              patternId = uiState.profile.selectedPatternId,
+              accessoryId = uiState.profile.selectedAccessoryId,
+              modifier = Modifier.size(64.dp),
+            )
+            OutlinedTextField(
+              value = nameInput,
+              onValueChange = { if (it.length <= 24) nameInput = it },
+              label = { Text("Cat Name") },
+              singleLine = true,
+              modifier = Modifier.weight(1f).testTag("cat_name_input"),
+            )
+            FilledTonalButton(
+              onClick = { onRenameCat(nameInput) },
+              modifier = Modifier.height(48.dp).testTag("save_cat_name_button"),
+            ) {
+              Text("Save")
+            }
+          }
+        }
+      }
+    }
+
+    item {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Rounded.Wallpaper,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(18.dp),
+        )
+        Text(text = "Sanctuary Room Backgrounds", style = MaterialTheme.typography.titleLarge)
+      }
+    }
+
+    val visibleBackgrounds =
+      GameCatalog.backgrounds.filter { !it.isEventExclusive || it.id in uiState.profile.unlockedBackgrounds }
+    items(visibleBackgrounds, key = { "bg_${it.id}" }) { bg ->
+      val isUnlocked = bg.id in uiState.profile.unlockedBackgrounds
+      val isEquipped = bg.id == uiState.profile.selectedBackgroundId
+      val effectiveCost =
+        GameCatalog.effectiveItemCost(
+          bg.cost,
+          uiState.challengeState.isHardcoreMode,
+          uiState.challengeState.unlockedAscensionIds,
+        )
+      val canAfford = uiState.activeCurrencyBalance >= effectiveCost
+
+      ItemHoverTooltipBox(
+        title = bg.name,
+        description = bg.description,
+        limitedTag = if (bg.isEventExclusive) "Limited ${bg.eventGroup ?: "Event"}" else null,
+        existCount = if (bg.isEventExclusive) uiState.existCountFor("BACKGROUND", bg.id) else null,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Card(
+          colors =
+            CardDefaults.cardColors(
+              containerColor =
+                if (isEquipped) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                else MaterialTheme.colorScheme.surfaceVariant
+            ),
+          border = if (isEquipped) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Row(
+              modifier = Modifier.weight(1f).padding(end = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              CatBackgroundPreviewSwatch(
+                def = bg,
+                modifier = Modifier.size(50.dp),
+              )
+              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(text = bg.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                  text = "Hover or hold for details",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+
+            Button(
+              onClick = { onSelectOrUnlockBackground(bg.id) },
+              enabled = isEquipped || isUnlocked || canAfford,
+              modifier = Modifier.height(48.dp).testTag("background_action_${bg.id}"),
+            ) {
+              if (isEquipped) {
+                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.size(4.dp))
+                Text("Active")
+              } else if (isUnlocked) {
+                Text("Equip")
+              } else {
+                Text(GameCatalog.formatCompactPurrs(effectiveCost))
+              }
+            }
           }
         }
       }
@@ -481,8 +675,8 @@ private fun CustomizeCatPanel(
               modifier = Modifier.size(50.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(text = pattern.name, style = MaterialTheme.typography.titleMedium)
@@ -572,8 +766,8 @@ private fun CustomizeCatPanel(
               modifier = Modifier.size(50.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(text = accessory.name, style = MaterialTheme.typography.titleMedium)
@@ -744,6 +938,7 @@ private fun GemVaultPanel(
     items(gemPatterns, key = { "gem_pat_${it.id}" }) { pattern ->
       val isUnlocked = pattern.id in uiState.profile.unlockedPatterns
       val isEquipped = pattern.id == uiState.profile.selectedPatternId
+      val existCount = uiState.existCountFor("PATTERN", pattern.id)
       Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         border = if (isEquipped) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
@@ -765,7 +960,25 @@ private fun GemVaultPanel(
               modifier = Modifier.size(50.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Text(text = pattern.name, style = MaterialTheme.typography.titleMedium)
+              @OptIn(ExperimentalLayoutApi::class)
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Text(text = pattern.name, style = MaterialTheme.typography.titleMedium)
+                Surface(
+                  color = MaterialTheme.colorScheme.secondaryContainer,
+                  shape = MaterialTheme.shapes.small,
+                ) {
+                  Text(
+                    text = "${GameCatalog.formatCompactPurrs(existCount)} Exist",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                  )
+                }
+              }
               Text(
                 text = pattern.description,
                 style = MaterialTheme.typography.bodySmall,
@@ -794,6 +1007,7 @@ private fun GemVaultPanel(
     items(gemAccessories, key = { "gem_acc_${it.id}" }) { accessory ->
       val isUnlocked = accessory.id in uiState.profile.unlockedAccessories
       val isEquipped = accessory.id == uiState.profile.selectedAccessoryId
+      val existCount = uiState.existCountFor("ACCESSORY", accessory.id)
       Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         border = if (isEquipped) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
@@ -815,7 +1029,25 @@ private fun GemVaultPanel(
               modifier = Modifier.size(50.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Text(text = accessory.name, style = MaterialTheme.typography.titleMedium)
+              @OptIn(ExperimentalLayoutApi::class)
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Text(text = accessory.name, style = MaterialTheme.typography.titleMedium)
+                Surface(
+                  color = MaterialTheme.colorScheme.secondaryContainer,
+                  shape = MaterialTheme.shapes.small,
+                ) {
+                  Text(
+                    text = "${GameCatalog.formatCompactPurrs(existCount)} Exist",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                  )
+                }
+              }
               Text(
                 text = accessory.description,
                 style = MaterialTheme.typography.bodySmall,
@@ -844,9 +1076,10 @@ private fun GemVaultPanel(
     items(gemThemes, key = { "gem_theme_${it.id}" }) { theme ->
       val isUnlocked = theme.id in uiState.settings.unlockedColorThemes
       val isSelected = uiState.settings.colorTheme == theme
+      val existCount = uiState.existCountFor("THEME", theme.id)
       GemVaultOfferCard(
         icon = Icons.Rounded.Palette,
-        title = "${theme.displayName} Theme",
+        title = "${theme.displayName} Theme (${GameCatalog.formatCompactPurrs(existCount)} Exist)",
         description = "${theme.requirementSummary} — jewel-toned luxury Sanctuary palette.",
         buttonLabel =
           when {

@@ -3,7 +3,10 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,6 +62,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.BadgeDef
 import com.example.data.model.GameCatalog
 import com.example.data.model.QuestDef
+import com.example.ui.components.SubtleGlitchLoreWhisper
 import com.example.ui.viewmodel.PurrGameUiState
 
 private data class EvaluatedQuest(
@@ -118,15 +122,23 @@ fun QuestsAndBadgesScreen(
       }
     }
 
-  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+  BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val isNarrow = maxWidth < 360.dp
+    val horizontalPad = if (isNarrow) 10.dp else 16.dp
+
     LazyColumn(
       modifier = Modifier.fillMaxSize().widthIn(max = 640.dp),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+      contentPadding = PaddingValues(horizontal = horizontalPad, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       item {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(text = "Quests & Achievements", style = MaterialTheme.typography.headlineSmall)
+          Text(
+            text = "Quests & Achievements",
+            style =
+              if (isNarrow) MaterialTheme.typography.titleLarge
+              else MaterialTheme.typography.headlineSmall,
+          )
           Text(
             text =
               "Track Sanctuary milestones, claim Purrs & Rare Gems, and equip Leaderboard Badges.",
@@ -151,10 +163,11 @@ fun QuestsAndBadgesScreen(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
+              verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -176,6 +189,8 @@ fun QuestsAndBadgesScreen(
                     text = "Sanctuary Achievements",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                   Text(
                     text =
@@ -353,6 +368,10 @@ fun QuestsAndBadgesScreen(
           )
         }
       }
+
+      item {
+        SubtleGlitchLoreWhisper(channel = "quests")
+      }
     }
   }
 
@@ -447,10 +466,11 @@ private fun AchievementQuestCard(
         strokeCap = StrokeCap.Round,
       )
 
-      Row(
+      @OptIn(ExperimentalLayoutApi::class)
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -599,7 +619,13 @@ private fun AchievementsDialog(
               shape = SegmentedButtonDefaults.itemShape(index = index, count = tabLabels.size),
               modifier = Modifier.testTag("achievements_tab_$index"),
             ) {
-              Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+              )
             }
           }
         }

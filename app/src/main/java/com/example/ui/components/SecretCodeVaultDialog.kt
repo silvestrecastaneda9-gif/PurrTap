@@ -18,8 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.GppBad
 import androidx.compose.material.icons.rounded.LockClock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Verified
@@ -31,9 +33,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -57,15 +65,27 @@ import com.example.ui.viewmodel.PurrGameUiState
 fun SecretCodeVaultDialog(
   uiState: PurrGameUiState,
   onTalkToKeeper: () -> Boolean,
+  onUnlockCatComputer: (String) -> Boolean,
+  onOpenWindowGatoDesktop: () -> Unit,
+  onDismissExitConfrontation: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val isKickedOut = uiState.vaultCooldownRemainingMillis > 0L
   val tapCount = uiState.vaultKeeperTapCount
   val maxTaps = GameCatalog.VAULT_KEEPER_KICKOUT_TAPS
   val hasHackerUnlock = uiState.challengeState.hackerVaultUnlocked
+  val hasSearchedComputer = uiState.challengeState.dogComputerSearched
+  val isComputerUnlocked = uiState.challengeState.catComputerUnlocked
+
+  var passwordInput by rememberSaveable { mutableStateOf("") }
+  var passwordError by rememberSaveable { mutableStateOf(false) }
 
   val dialogueLine =
     when {
+      uiState.showWindowGatoExitConfrontation ->
+        "Was it worth searching without permission? You know the truth now."
+      hasSearchedComputer ->
+        "...The Dog Vault Keeper watches in silence and leaves you alone."
       isKickedOut ->
         "LOCKOUT ENGAGED! I warned you not to click me so many times! Come back after the firewall cools down."
       tapCount == 0 ->
@@ -231,6 +251,7 @@ fun SecretCodeVaultDialog(
                 color =
                   when {
                     isKickedOut -> MaterialTheme.colorScheme.error
+                    hasSearchedComputer -> MaterialTheme.colorScheme.surfaceVariant
                     tapCount >= 4 -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.primary
                   },
@@ -240,6 +261,7 @@ fun SecretCodeVaultDialog(
                   text =
                     when {
                       isKickedOut -> "KICKED OUT"
+                      hasSearchedComputer -> "SILENT"
                       tapCount >= 4 -> "IRRITATED"
                       else -> "ON GUARD"
                     },
@@ -249,6 +271,7 @@ fun SecretCodeVaultDialog(
                   color =
                     when {
                       isKickedOut -> MaterialTheme.colorScheme.onError
+                      hasSearchedComputer -> MaterialTheme.colorScheme.onSurfaceVariant
                       tapCount >= 4 -> MaterialTheme.colorScheme.onTertiary
                       else -> MaterialTheme.colorScheme.onPrimary
                     },
@@ -282,7 +305,7 @@ fun SecretCodeVaultDialog(
               )
             }
 
-            if (!isKickedOut) {
+            if (!isKickedOut && !hasSearchedComputer) {
               Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -314,6 +337,168 @@ fun SecretCodeVaultDialog(
                   modifier = Modifier.fillMaxWidth().height(6.dp),
                   strokeCap = StrokeCap.Round,
                 )
+              }
+            }
+          }
+        }
+
+        if (uiState.showWindowGatoExitConfrontation) {
+          Card(
+            colors =
+              CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f)
+              ),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.tertiary),
+            modifier = Modifier.fillMaxWidth().testTag("keeper_exit_confrontation_card"),
+          ) {
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(14.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Text(
+                text = "Dog Vault Keeper:",
+                style = MaterialTheme.typography.labelLarge,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+              )
+              Text(
+                text = "\"Was it worth searching without permission? You know the truth now.\"",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+              )
+              OutlinedButton(
+                onClick = onDismissExitConfrontation,
+                modifier = Modifier.align(Alignment.End).height(48.dp).testTag("keeper_truth_ack_button"),
+              ) {
+                Text("Step Away")
+              }
+            }
+          }
+        }
+
+        // Cat Computer / Window Gato Workstation Card
+        Card(
+          colors =
+            CardDefaults.cardColors(
+              containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            ),
+          border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+          modifier = Modifier.fillMaxWidth().testTag("cat_computer_vault_card"),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.Computer,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+              )
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = "Cat Computer • Window Gato OS",
+                  style = MaterialTheme.typography.titleSmall,
+                  fontFamily = FontFamily.Monospace,
+                  fontWeight = FontWeight.Bold,
+                )
+                Text(
+                  text =
+                    if (isComputerUnlocked) "AUTHENTICATED • LANDSCAPE DESKTOP"
+                    else "LOCKED TERMINAL • PASSWORD REQUIRED",
+                  style = MaterialTheme.typography.labelSmall,
+                  fontFamily = FontFamily.Monospace,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+
+            if (isComputerUnlocked) {
+              Button(
+                onClick = onOpenWindowGatoDesktop,
+                modifier =
+                  Modifier.fillMaxWidth().height(50.dp).testTag("launch_window_gato_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.LockOpen,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Boot Window Gato Desktop", fontWeight = FontWeight.Bold)
+              }
+            } else {
+              OutlinedTextField(
+                value = passwordInput,
+                onValueChange = {
+                  passwordInput = it
+                  passwordError = false
+                },
+                label = { Text("Enter Terminal Password") },
+                singleLine = true,
+                isError = passwordError,
+                supportingText =
+                  if (passwordError) {
+                    { Text("Wrong password — read the riddle & hint below.") }
+                  } else {
+                    null
+                  },
+                modifier = Modifier.fillMaxWidth().testTag("cat_computer_password_input"),
+              )
+
+              Button(
+                onClick = {
+                  val ok = onUnlockCatComputer(passwordInput)
+                  passwordError = !ok
+                },
+                modifier =
+                  Modifier.fillMaxWidth().height(48.dp).testTag("unlock_cat_computer_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.Terminal,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Submit Password & Boot", fontWeight = FontWeight.Bold)
+              }
+
+              // Riddle & Hint located directly below the Password Input
+              Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                shape = MaterialTheme.shapes.medium,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth().testTag("cat_computer_riddle_box"),
+              ) {
+                Column(
+                  modifier = Modifier.padding(10.dp),
+                  verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                  Text(
+                    text = "PASSWORD RIDDLE:",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                  Text(
+                    text = GameCatalog.CAT_COMPUTER_RIDDLE,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                  )
+                  Text(
+                    text = GameCatalog.CAT_COMPUTER_HINT,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.tertiary,
+                  )
+                }
               }
             }
           }
@@ -383,9 +568,9 @@ fun SecretCodeVaultDialog(
 
         Button(
           onClick = { handleInteract() },
-          enabled = !isKickedOut,
+          enabled = !isKickedOut && !hasSearchedComputer,
           colors =
-            if (tapCount >= 4 && !isKickedOut) {
+            if (tapCount >= 4 && !isKickedOut && !hasSearchedComputer) {
               ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             } else {
               ButtonDefaults.buttonColors()
@@ -402,8 +587,11 @@ fun SecretCodeVaultDialog(
           Spacer(modifier = Modifier.width(8.dp))
           Text(
             text =
-              if (isKickedOut) "Vault Locked (${uiState.vaultCooldownText})"
-              else "Talk to Dog Vault Keeper",
+              when {
+                hasSearchedComputer -> "Dog Keeper Left You Alone"
+                isKickedOut -> "Vault Locked (${uiState.vaultCooldownText})"
+                else -> "Talk to Dog Vault Keeper"
+              },
             fontWeight = FontWeight.Bold,
           )
         }
@@ -413,7 +601,7 @@ fun SecretCodeVaultDialog(
 }
 
 @Composable
-private fun DogVaultKeeperPortrait(
+internal fun DogVaultKeeperPortrait(
   agitationLevel: Int,
   isKickedOut: Boolean,
   modifier: Modifier = Modifier,

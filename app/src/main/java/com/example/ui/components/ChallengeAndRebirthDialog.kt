@@ -54,6 +54,11 @@ import com.example.data.model.ChallengeProgressState
 import com.example.data.model.GameCatalog
 import com.example.ui.viewmodel.PurrGameUiState
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.rounded.Hexagon
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChallengeAndRebirthDialog(
   uiState: PurrGameUiState,
@@ -61,6 +66,7 @@ fun ChallengeAndRebirthDialog(
   onPerformGatoAscension: () -> Unit,
   onUnlockAscensionNode: (String) -> Unit,
   onToggleHardcoreMode: () -> Unit,
+  onOpenHoneycombTree: () -> Unit = {},
   onDismiss: () -> Unit,
 ) {
   val profile = uiState.profile
@@ -257,7 +263,7 @@ fun ChallengeAndRebirthDialog(
                 challenge = challenge,
                 canAscend = uiState.canAscend,
                 onPerformGatoAscension = onPerformGatoAscension,
-                onViewTree = { selectedTab = 1 },
+                onViewTree = onOpenHoneycombTree,
               )
             }
 
@@ -270,63 +276,102 @@ fun ChallengeAndRebirthDialog(
                 onViewTree = null,
               )
 
-              // Ascension Tree Tiers
-              Text(
-                text = "Gato Ascension Tree",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-              )
-
-              val tier1 = GameCatalog.ascensionUpgrades.filter { it.tier == 1 }
-              val tier2 = GameCatalog.ascensionUpgrades.filter { it.tier == 2 }
-              val tier3 = GameCatalog.ascensionUpgrades.filter { it.tier == 3 }
-              val tier4 = GameCatalog.ascensionUpgrades.filter { it.tier == 4 }
-
-              tier1.forEach { node ->
-                AscensionNodeCard(
-                  node = node,
-                  challenge = challenge,
-                  onUnlock = { onUnlockAscensionNode(node.id) },
-                )
-              }
-
-              TreeBranchConnector()
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+              // Full-Screen Honeycomb Ascension Tree Portal Card
+              Card(
+                onClick = onOpenHoneycombTree,
+                colors =
+                  CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                  ),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth().testTag("enter_honeycomb_tree_card"),
               ) {
-                tier2.forEach { node ->
-                  AscensionNodeCard(
-                    node = node,
-                    challenge = challenge,
-                    onUnlock = { onUnlockAscensionNode(node.id) },
-                    modifier = Modifier.weight(1f),
-                  )
-                }
-              }
+                Column(
+                  modifier = Modifier.fillMaxWidth().padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(10.dp),
+                      modifier = Modifier.weight(1f),
+                    ) {
+                      Icon(
+                        imageVector = Icons.Rounded.Hexagon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp),
+                      )
+                      Column {
+                        Text(
+                          text = "Honeycomb Ascension Tree",
+                          style = MaterialTheme.typography.titleMedium,
+                          fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                          text =
+                            "${challenge.unlockedAscensionIds.size}/${GameCatalog.ascensionUpgrades.size} Hex Nodes Unlocked • ${challenge.gatoShards} Gato Shards",
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
+                        )
+                      }
+                    }
+                  }
 
-              TreeBranchConnector()
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-              ) {
-                tier3.forEach { node ->
-                  AscensionNodeCard(
-                    node = node,
-                    challenge = challenge,
-                    onUnlock = { onUnlockAscensionNode(node.id) },
-                    modifier = Modifier.weight(1f),
-                  )
-                }
-              }
+                  FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                  ) {
+                    GameCatalog.ascensionUpgrades.forEach { node ->
+                      val owned = node.id in challenge.unlockedAscensionIds
+                      val available = GameCatalog.canUnlockAscensionNode(node, challenge).first
+                      Surface(
+                        color =
+                          when {
+                            owned -> MaterialTheme.colorScheme.primary
+                            available -> MaterialTheme.colorScheme.tertiaryContainer
+                            else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)
+                          },
+                        shape = CircleShape,
+                      ) {
+                        Text(
+                          text = (if (owned) "✓ " else "") + node.name,
+                          style = MaterialTheme.typography.labelSmall,
+                          fontWeight = FontWeight.SemiBold,
+                          color =
+                            when {
+                              owned -> MaterialTheme.colorScheme.onPrimary
+                              available -> MaterialTheme.colorScheme.onTertiaryContainer
+                              else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                      }
+                    }
+                  }
 
-              TreeBranchConnector()
-              tier4.forEach { node ->
-                AscensionNodeCard(
-                  node = node,
-                  challenge = challenge,
-                  onUnlock = { onUnlockAscensionNode(node.id) },
-                )
+                  Button(
+                    onClick = onOpenHoneycombTree,
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("launch_honeycomb_tree_button"),
+                  ) {
+                    Icon(
+                      imageVector = Icons.Rounded.Hexagon,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text("Open Full-Screen Honeycomb Tree", maxLines = 1)
+                  }
+                }
               }
             }
 
@@ -502,6 +547,7 @@ fun ChallengeAndRebirthDialog(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GatoAscensionCard(
   challenge: ChallengeProgressState,
@@ -570,16 +616,20 @@ private fun GatoAscensionCard(
         color = MaterialTheme.colorScheme.onTertiaryContainer,
       )
 
-      Row(
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         Button(
           onClick = onPerformGatoAscension,
           enabled = canAscend,
           colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
           modifier =
-            Modifier.weight(1f).height(48.dp).testTag("perform_gato_ascension_button"),
+            Modifier.weight(1f)
+              .widthIn(min = 180.dp)
+              .height(48.dp)
+              .testTag("perform_gato_ascension_button"),
         ) {
           Text(
             text =

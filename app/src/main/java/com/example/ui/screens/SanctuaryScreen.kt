@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,31 +25,29 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoFixHigh
-import androidx.compose.material.icons.rounded.CardGiftcard
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Dehaze
 import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Eco
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.LocalFlorist
 import androidx.compose.material.icons.rounded.Looks
-import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pets
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Thunderstorm
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.WbTwilight
@@ -55,7 +56,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -80,58 +80,63 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.model.FestivalTier
 import com.example.data.model.GameCatalog
 import com.example.data.model.MoonlightPhase
 import com.example.data.weather.WeatherConditionKind
+import com.example.ui.components.CatStageBackground
 import com.example.ui.components.InteractivePurrCat
+import com.example.ui.components.LocalPurrFeedback
+import com.example.ui.components.SubtleGlitchLoreWhisper
 import com.example.ui.components.WeatherParticlesOverlay
 import com.example.ui.viewmodel.PurrGameUiState
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SanctuaryScreen(
   uiState: PurrGameUiState,
   onPetCat: (Float, Float) -> Unit,
-  onOpenDailyRewards: () -> Unit,
   onOpenWeatherSync: () -> Unit,
   onOpenEventShop: () -> Unit,
   onOpenNovemberPass: () -> Unit,
-  onOpenInventory: () -> Unit,
   onOpenChallengeDialog: () -> Unit,
-  onOpenSettings: () -> Unit,
-  onNavigateToCustomize: () -> Unit,
-  onSignInClick: () -> Unit,
-  onSignOut: () -> Unit,
+  onOpenMoreMenu: () -> Unit,
+  onOpenMusicPlayer: () -> Unit = {},
+  onDismissAnnouncement: (String) -> Unit = {},
 ) {
   val haptic = LocalHapticFeedback.current
+  val feedback = LocalPurrFeedback.current
   val numberFormat = NumberFormat.getNumberInstance(Locale.US)
   val animatedCombo by animateFloatAsState(targetValue = uiState.comboCharge, label = "comboBar")
 
-  Box(
+  BoxWithConstraints(
     modifier = Modifier.fillMaxSize(),
     contentAlignment = Alignment.TopCenter,
   ) {
+    val isNarrow = maxWidth < 360.dp
+    val horizontalPad = if (isNarrow) 10.dp else 16.dp
+
     Column(
       modifier =
         Modifier.fillMaxSize()
           .widthIn(max = 640.dp)
           .verticalScroll(rememberScrollState())
-          .padding(horizontal = 16.dp, vertical = 12.dp),
+          .padding(horizontal = horizontalPad, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      // Top Bar: Player + Weather + Daily Rewards + Settings + Optional Cloud Sync / Sign Out
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
+      val headerTitleBlock: @Composable () -> Unit = {
+        Column {
           Text(
             text = "PurrTap Sanctuary",
-            style = MaterialTheme.typography.headlineSmall,
+            style =
+              if (isNarrow) MaterialTheme.typography.titleLarge
+              else MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
           Text(
             text =
@@ -143,90 +148,261 @@ fun SanctuaryScreen(
               },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
+      }
 
+      val headerActionsBlock: @Composable () -> Unit = {
+        val moonlightPhase = uiState.moonlightState.phase
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(2.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           Surface(
-            modifier =
-              Modifier.clip(CircleShape)
-                .clickable(onClick = onOpenWeatherSync)
-                .testTag("weather_pill_button"),
+            onClick = {
+              feedback.tap()
+              onOpenWeatherSync()
+            },
             color = MaterialTheme.colorScheme.secondaryContainer,
             shape = CircleShape,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("weather_pill_button"),
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               Icon(
                 imageVector = weatherIcon(uiState.weather.condition),
-                contentDescription = "Game weather",
+                contentDescription = "Weather & Moonlight",
                 tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(18.dp),
               )
               Text(
                 text = "${uiState.weather.temperatureC.toInt()}°C",
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
               )
+              if (moonlightPhase != MoonlightPhase.INACTIVE) {
+                Box(
+                  modifier =
+                    Modifier.size(8.dp)
+                      .clip(CircleShape)
+                      .background(
+                        if (moonlightPhase == MoonlightPhase.BLOODMOON) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary
+                      )
+                )
+              }
             }
           }
 
-          IconButton(
-            onClick = onOpenDailyRewards,
-            modifier = Modifier.testTag("daily_rewards_button"),
+          Surface(
+            onClick = {
+              feedback.tap()
+              onOpenMusicPlayer()
+            },
+            color =
+              if (uiState.settings.isMusicPlaying) MaterialTheme.colorScheme.tertiaryContainer
+              else MaterialTheme.colorScheme.secondaryContainer,
+            shape = CircleShape,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("sanctuary_music_button"),
           ) {
-            BadgedBox(
-              badge = {
-                if (uiState.canClaimDailyReward) {
-                  Badge { Text("!") }
-                }
-              }
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
               Icon(
-                imageVector = Icons.Rounded.CardGiftcard,
-                contentDescription = "Daily Rewards",
-                tint = MaterialTheme.colorScheme.primary,
+                imageVector = Icons.Rounded.MusicNote,
+                contentDescription = "Open Music Studio",
+                tint =
+                  if (uiState.settings.isMusicPlaying)
+                    MaterialTheme.colorScheme.onTertiaryContainer
+                  else MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(18.dp),
               )
             }
           }
 
-          IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.testTag("settings_button"),
+          Surface(
+            onClick = {
+              feedback.tap()
+              onOpenMoreMenu()
+            },
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = CircleShape,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("sanctuary_more_button"),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              BadgedBox(
+                badge = {
+                  if (uiState.canClaimDailyReward) {
+                    Badge()
+                  }
+                }
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.Apps,
+                  contentDescription = "More tools & settings",
+                  tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                  modifier = Modifier.size(18.dp),
+                )
+              }
+              if (!isNarrow) {
+                Text(
+                  text = "More",
+                  style = MaterialTheme.typography.labelLarge,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // Top Bar: Adaptively stacks above action strip when Side Rail narrows the width
+      if (isNarrow) {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          headerTitleBlock()
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            headerActionsBlock()
+          }
+        }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+            headerTitleBlock()
+          }
+          headerActionsBlock()
+        }
+      }
+
+      uiState.activeAnnouncementBanner?.let { banner ->
+        val isWarning = banner.severity == "WARNING"
+        Card(
+          colors =
+            CardDefaults.cardColors(
+              containerColor =
+                if (isWarning) MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.tertiaryContainer
+            ),
+          border =
+            BorderStroke(
+              1.dp,
+              if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+            ),
+          shape = MaterialTheme.shapes.medium,
+          modifier = Modifier.fillMaxWidth().testTag("global_announcement_banner"),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Icon(
-              imageVector = Icons.Rounded.Settings,
-              contentDescription = "Settings",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              imageVector = if (isWarning) Icons.Rounded.Warning else Icons.Rounded.Campaign,
+              contentDescription = null,
+              tint = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
             )
-          }
-
-          if (uiState.isSignedIn) {
-            IconButton(
-              onClick = onSignInClick,
-              modifier = Modifier.testTag("sign_out_button"),
-            ) {
-              Icon(
-                imageVector = Icons.Rounded.AccountCircle,
-                contentDescription = "Account & Sign-In Options",
-                tint = MaterialTheme.colorScheme.primary,
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Surface(
+                  color =
+                    if (isWarning) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.tertiary,
+                  shape = MaterialTheme.shapes.extraSmall,
+                ) {
+                  Text(
+                    text = banner.severity,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color =
+                      if (isWarning) MaterialTheme.colorScheme.onError
+                      else MaterialTheme.colorScheme.onTertiary,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                  )
+                }
+                Text(
+                  text = banner.title,
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+              Text(
+                text = banner.body,
+                style = MaterialTheme.typography.bodySmall,
               )
             }
-          } else {
             IconButton(
-              onClick = onSignInClick,
-              modifier = Modifier.testTag("cloud_sync_sign_in_button"),
+              onClick = { onDismissAnnouncement(banner.messageId) },
+              modifier = Modifier.testTag("dismiss_global_announcement_button"),
             ) {
-              Icon(
-                imageVector = Icons.Rounded.AccountCircle,
-                contentDescription = "Sign-In & Account Options",
-                tint = MaterialTheme.colorScheme.primary,
+              Icon(Icons.Rounded.Close, contentDescription = "Dismiss announcement")
+            }
+          }
+        }
+      }
+
+      if (uiState.isTimedOut || uiState.activeModeration?.status == "WARNED") {
+        val mod = uiState.activeModeration
+        val remainingMillis =
+          ((mod?.timeoutUntilMillis ?: 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+        Card(
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+          border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+          shape = MaterialTheme.shapes.medium,
+          modifier = Modifier.fillMaxWidth().testTag("moderation_notice_banner"),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Gavel,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.error,
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(
+                text =
+                  if (uiState.isTimedOut) {
+                    "Timed Out (${GameCatalog.formatElapsedDuration(remainingMillis)} remaining)"
+                  } else {
+                    "Admin Warning (${mod?.warningCount ?: 1}x)"
+                  },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+              )
+              Text(
+                text = mod?.reason?.ifBlank { "Please follow Sanctuary guidelines." } ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
               )
             }
           }
@@ -245,11 +421,7 @@ fun SanctuaryScreen(
         shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(16.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val balanceHeaderBlock: @Composable () -> Unit = {
           Column {
             Text(
               text = if (isHardcore) "HARDCORE PURRS BALANCE" else "PURRS BALANCE",
@@ -260,7 +432,10 @@ fun SanctuaryScreen(
             )
             Text(
               text = GameCatalog.formatCompactPurrs(uiState.activeCurrencyBalance),
-              style = MaterialTheme.typography.displaySmall,
+              style =
+                if (isNarrow) MaterialTheme.typography.headlineMedium
+                else MaterialTheme.typography.displaySmall,
+              fontWeight = FontWeight.Bold,
               color =
                 if (isHardcore) MaterialTheme.colorScheme.onErrorContainer
                 else MaterialTheme.colorScheme.onPrimaryContainer,
@@ -275,24 +450,61 @@ fun SanctuaryScreen(
                 else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
             )
           }
+        }
 
+        if (isNarrow) {
           Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            StatChip(
-              icon = Icons.Rounded.TouchApp,
-              label = "+${GameCatalog.formatCompactPurrs(uiState.effectiveClickPower)}/tap",
-            )
-            StatChip(
-              icon = Icons.Rounded.AutoAwesome,
-              label = "+${GameCatalog.formatCompactPurrs(uiState.effectivePps)}/sec",
-            )
-            StatChip(
-              icon = Icons.Rounded.Diamond,
-              label = "${numberFormat.format(uiState.challengeState.gems)} Gems",
-              modifier = Modifier.testTag("gems_balance_text"),
-            )
+            balanceHeaderBlock()
+            FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              StatChip(
+                icon = Icons.Rounded.TouchApp,
+                label = "+${GameCatalog.formatCompactPurrs(uiState.effectiveClickPower)}/tap",
+              )
+              StatChip(
+                icon = Icons.Rounded.AutoAwesome,
+                label = "+${GameCatalog.formatCompactPurrs(uiState.effectivePps)}/sec",
+              )
+              StatChip(
+                icon = Icons.Rounded.Diamond,
+                label = "${numberFormat.format(uiState.challengeState.gems)} Gems",
+                modifier = Modifier.testTag("gems_balance_text"),
+              )
+            }
+          }
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+              balanceHeaderBlock()
+            }
+
+            Column(
+              horizontalAlignment = Alignment.End,
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              StatChip(
+                icon = Icons.Rounded.TouchApp,
+                label = "+${GameCatalog.formatCompactPurrs(uiState.effectiveClickPower)}/tap",
+              )
+              StatChip(
+                icon = Icons.Rounded.AutoAwesome,
+                label = "+${GameCatalog.formatCompactPurrs(uiState.effectivePps)}/sec",
+              )
+              StatChip(
+                icon = Icons.Rounded.Diamond,
+                label = "${numberFormat.format(uiState.challengeState.gems)} Gems",
+                modifier = Modifier.testTag("gems_balance_text"),
+              )
+            }
           }
         }
       }
@@ -327,7 +539,7 @@ fun SanctuaryScreen(
               )
             }
             Text(
-              text = uiState.gemFrenzyCountdownText,
+              text = "ACTIVE",
               style = MaterialTheme.typography.labelMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.tertiary,
@@ -338,7 +550,10 @@ fun SanctuaryScreen(
 
       // Rebirth Prestige, Gato Ascensión & Hardcore Mode Status Card
       Card(
-        onClick = onOpenChallengeDialog,
+        onClick = {
+          feedback.tap()
+          onOpenChallengeDialog()
+        },
         colors =
           CardDefaults.cardColors(
             containerColor =
@@ -368,8 +583,8 @@ fun SanctuaryScreen(
               modifier = Modifier.size(22.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(
@@ -450,7 +665,10 @@ fun SanctuaryScreen(
       val passBarProgress = (freeIntoStep.toFloat() / freeStepMax.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
       val totalPassReady = uiState.claimablePassCount + uiState.claimablePassQuestsCount
       Card(
-        onClick = onOpenNovemberPass,
+        onClick = {
+          feedback.tap()
+          onOpenNovemberPass()
+        },
         colors =
           CardDefaults.cardColors(
             containerColor =
@@ -491,8 +709,8 @@ fun SanctuaryScreen(
                 modifier = Modifier.size(22.dp),
               )
               Column {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
+                FlowRow(
+                  verticalArrangement = Arrangement.spacedBy(4.dp),
                   horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                   Text(
@@ -572,68 +790,97 @@ fun SanctuaryScreen(
         }
       }
 
-      // Periodic Limited-Time Event Card (tap to open Pop-Up Event Boutique!)
+      // Periodic Limited-Time Event Card: Thanksgiving Event Part One
+      val isMegaFestival = uiState.festivalTier == FestivalTier.MEGA
       Card(
-        onClick = onOpenEventShop,
+        onClick = {
+          feedback.tap()
+          onOpenEventShop()
+        },
+        border =
+          if (isMegaFestival) BorderStroke(1.5.dp, Color(0xFFFFB300)) else null,
         shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth().testTag("live_event_card"),
       ) {
-        Box(modifier = Modifier.fillMaxWidth().height(104.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 108.dp)) {
           Image(
-            painter = painterResource(id = R.drawable.img_event_festival),
-            contentDescription = "Limited-time event banner",
-            modifier = Modifier.fillMaxSize(),
+            painter = painterResource(id = R.drawable.img_thanksgiving_festival),
+            contentDescription = "Thanksgiving Event Part Two banner",
+            modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
           )
           Box(
             modifier =
-              Modifier.fillMaxSize()
+              Modifier.matchParentSize()
                 .background(
                   Brush.horizontalGradient(
-                    colors = listOf(Color(0xD91A1633), Color(0x991A1633), Color(0x661A1633))
+                    colors =
+                      if (isMegaFestival) {
+                        listOf(Color(0xE04A1A00), Color(0xAA4A1A00), Color(0x77361200))
+                      } else {
+                        listOf(Color(0xD91A1633), Color(0x991A1633), Color(0x661A1633))
+                      }
                   )
                 )
           )
           Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
+              FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(end = 6.dp),
               ) {
                 Surface(
-                  color = MaterialTheme.colorScheme.tertiary,
+                  color =
+                    when {
+                      !uiState.isTurkeyRushActive -> Color(0xFF455A64)
+                      isMegaFestival -> Color(0xFFD84315)
+                      else -> MaterialTheme.colorScheme.tertiary
+                    },
                   shape = CircleShape,
                 ) {
                   Text(
-                    text = "LIVE EVENT",
+                    text =
+                      if (uiState.isTurkeyRushActive) "${uiState.festivalTier.shortBadge} • OPEN"
+                      else "STORE CLOSED",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onTertiary,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                   )
                 }
+                Surface(
+                  color = Color(0xFFFFE0B2),
+                  shape = CircleShape,
+                ) {
+                  Text(
+                    text = "🦃 ${uiState.challengeState.turkeys}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF4E2300),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                  )
+                }
                 Text(
-                  text = uiState.activeEvent.title,
+                  text = uiState.festivalTier.label,
                   style = MaterialTheme.typography.titleMedium,
                   color = Color.White,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
                 )
               }
               Text(
-                text =
-                  if (uiState.activeEvent.id == "starlight_festival") {
-                    "Ends Nov 18 (${uiState.eventCountdownText})"
-                  } else {
-                    uiState.eventCountdownText
-                  },
+                text = "Reroll: ${uiState.festivalRerollCountdownText}",
                 style = MaterialTheme.typography.labelMedium,
                 color = Color(0xFFFFD86B),
+                maxLines = 1,
               )
             }
             Row(
@@ -643,11 +890,7 @@ fun SanctuaryScreen(
             ) {
               Text(
                 text =
-                  if (uiState.activeEvent.id == "starlight_festival") {
-                    "${uiState.activeEvent.boostLabel} • Thanksgiving Preview inside"
-                  } else {
-                    "${uiState.activeEvent.boostLabel} • ${uiState.weather.condition.buffTitle}"
-                  },
+                  "${uiState.festivalTier.boostLabel} • ${uiState.turkeyRushCountdownText}",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFFF3EBF8),
                 modifier = Modifier.weight(1f).padding(end = 8.dp),
@@ -672,105 +915,12 @@ fun SanctuaryScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF281900),
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                   )
                 }
               }
             }
           }
-        }
-      }
-
-      // Midnight-to-Morning Moonlight / Bloodmoon Event Card
-      val moonlightPhase = uiState.moonlightState.phase
-      val moonlightContainer =
-        when (moonlightPhase) {
-          MoonlightPhase.BLOODMOON -> MaterialTheme.colorScheme.errorContainer
-          MoonlightPhase.MOONLIGHT -> MaterialTheme.colorScheme.secondaryContainer
-          MoonlightPhase.INACTIVE -> MaterialTheme.colorScheme.surfaceVariant
-        }
-      val moonlightContent =
-        when (moonlightPhase) {
-          MoonlightPhase.BLOODMOON -> MaterialTheme.colorScheme.onErrorContainer
-          MoonlightPhase.MOONLIGHT -> MaterialTheme.colorScheme.onSecondaryContainer
-          MoonlightPhase.INACTIVE -> MaterialTheme.colorScheme.onSurfaceVariant
-        }
-      Card(
-        onClick = onOpenEventShop,
-        colors = CardDefaults.cardColors(containerColor = moonlightContainer),
-        border =
-          if (moonlightPhase == MoonlightPhase.BLOODMOON) {
-            BorderStroke(1.5.dp, MaterialTheme.colorScheme.error)
-          } else null,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth().testTag("moonlight_event_card"),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.NightsStay,
-              contentDescription = null,
-              tint =
-                if (moonlightPhase == MoonlightPhase.BLOODMOON) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(22.dp),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-              ) {
-                Text(
-                  text = moonlightPhase.title,
-                  style = MaterialTheme.typography.titleSmall,
-                  color = moonlightContent,
-                )
-                if (moonlightPhase != MoonlightPhase.INACTIVE) {
-                  Surface(
-                    color =
-                      if (moonlightPhase == MoonlightPhase.BLOODMOON) MaterialTheme.colorScheme.error
-                      else MaterialTheme.colorScheme.primary,
-                    shape = CircleShape,
-                  ) {
-                    Text(
-                      text =
-                        if (moonlightPhase == MoonlightPhase.BLOODMOON) "33% RARE" else "ACTIVE",
-                      style = MaterialTheme.typography.labelSmall,
-                      color =
-                        if (moonlightPhase == MoonlightPhase.BLOODMOON)
-                          MaterialTheme.colorScheme.onError
-                        else MaterialTheme.colorScheme.onPrimary,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
-                  }
-                }
-              }
-              Text(
-                text =
-                  if (moonlightPhase == MoonlightPhase.INACTIVE) {
-                    uiState.moonlightState.statusText
-                  } else {
-                    "${moonlightPhase.boostLabel} • ${uiState.moonlightState.statusText}"
-                  },
-                style = MaterialTheme.typography.bodySmall,
-                color = moonlightContent.copy(alpha = 0.9f),
-              )
-            }
-          }
-          Text(
-            text = "Shop →",
-            style = MaterialTheme.typography.labelLarge,
-            color =
-              if (moonlightPhase == MoonlightPhase.BLOODMOON) MaterialTheme.colorScheme.error
-              else MaterialTheme.colorScheme.primary,
-          )
         }
       }
 
@@ -789,7 +939,7 @@ fun SanctuaryScreen(
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(6.dp),
-              modifier = Modifier.weight(1f).padding(end = 6.dp),
+              modifier = Modifier.weight(1f),
             ) {
               Icon(
                 imageVector = Icons.Rounded.Pets,
@@ -800,40 +950,23 @@ fun SanctuaryScreen(
               Text(
                 text = uiState.profile.selectedCatName,
                 style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
             }
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
-              verticalAlignment = Alignment.CenterVertically,
+            Surface(
+              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+              shape = CircleShape,
             ) {
-              FilledTonalButton(
-                onClick = onOpenInventory,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.height(48.dp).testTag("inventory_button"),
-              ) {
-                Icon(
-                  imageVector = Icons.Rounded.Inventory2,
-                  contentDescription = null,
-                  modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("Inventory", maxLines = 1)
-              }
-              FilledTonalButton(
-                onClick = onNavigateToCustomize,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.height(48.dp).testTag("customize_cat_shortcut"),
-              ) {
-                Icon(
-                  imageVector = Icons.Rounded.Edit,
-                  contentDescription = null,
-                  modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("Style", maxLines = 1)
-              }
+              Text(
+                text = "${uiState.weather.condition.label} (${uiState.weather.condition.buffTitle})",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+              )
             }
           }
 
@@ -859,12 +992,9 @@ fun SanctuaryScreen(
             val boxW = constraints.maxWidth
             val boxH = constraints.maxHeight
 
-            Image(
-              painter = painterResource(id = R.drawable.img_sanctuary_banner),
-              contentDescription = null,
+            CatStageBackground(
+              backgroundId = uiState.profile.selectedBackgroundId,
               modifier = Modifier.fillMaxSize(),
-              alpha = 0.24f,
-              contentScale = ContentScale.Crop,
             )
 
             InteractivePurrCat(
@@ -939,9 +1069,11 @@ fun SanctuaryScreen(
 
           Spacer(modifier = Modifier.height(12.dp))
 
-          // Purr Frenzy Combo Meter
+          // Critical Pets Indicator (replaces Purr Frenzy Combo)
+          val hasCritAura = "asc_frenzy_aura" in uiState.challengeState.unlockedAscensionIds
+          val critChancePct = if (hasCritAura) 20 else 12
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("critical_pets_indicator"),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
@@ -956,72 +1088,21 @@ fun SanctuaryScreen(
                 modifier = Modifier.size(18.dp),
               )
               Text(
-                text = "Purr Frenzy Combo",
+                text = "Critical Pets",
                 style = MaterialTheme.typography.titleSmall,
               )
             }
             Text(
-              text = String.format(Locale.US, "%.2fx", uiState.comboMultiplier),
-              style = MaterialTheme.typography.titleSmall,
+              text = "$critChancePct% Chance • 2.5x Purrs",
+              style = MaterialTheme.typography.labelLarge,
               color = MaterialTheme.colorScheme.primary,
               fontWeight = FontWeight.Bold,
             )
           }
-          Spacer(modifier = Modifier.height(6.dp))
-          LinearProgressIndicator(
-            progress = { animatedCombo },
-            modifier = Modifier.fillMaxWidth().height(10.dp),
-            color =
-              if (uiState.comboMultiplier >= 2.0) MaterialTheme.colorScheme.tertiary
-              else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surface,
-            strokeCap = StrokeCap.Round,
-          )
         }
       }
 
-      // Game Weather Active Buff Banner
-      Card(
-        onClick = onOpenWeatherSync,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth().testTag("weather_banner_card"),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(14.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f),
-          ) {
-            Icon(
-              imageVector = weatherIcon(uiState.weather.condition),
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.secondary,
-              modifier = Modifier.size(24.dp),
-            )
-            Column {
-              Text(
-                text = "${uiState.weather.condition.label} • ${uiState.weather.condition.buffTitle}",
-                style = MaterialTheme.typography.titleSmall,
-              )
-              Text(
-                text = "${uiState.weather.condition.buffDescription} (Next in ${uiState.weather.nextShiftSeconds}s)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          }
-          Text(
-            text = "Forecast",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-          )
-        }
-      }
+      SubtleGlitchLoreWhisper(channel = "sanctuary")
     }
 
     // Full-screen ambient visual weather & Golden Rain particle overlay (non-interactive)

@@ -12,6 +12,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             'email_verified' in request.auth.token &&
+             request.auth.token.email == 'silvestrecastaneda9@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -44,21 +52,27 @@ service cloud.firestore {
              data.selectedCatName.size() <= 24 &&
              data.selectedPatternId is string &&
              data.selectedPatternId.size() >= 1 &&
-             data.selectedPatternId.size() <= 32 &&
+             data.selectedPatternId.size() <= 48 &&
              data.selectedAccessoryId is string &&
              data.selectedAccessoryId.size() >= 1 &&
-             data.selectedAccessoryId.size() <= 32 &&
-             isValidStringList(data.unlockedPatterns, 24) &&
-             isValidStringList(data.unlockedAccessories, 24) &&
-             data.upgradeLevels is map && data.upgradeLevels.size() <= 32 &&
-             data.dailyStreak is int && data.dailyStreak >= 0 && data.dailyStreak <= 3650 &&
+             data.selectedAccessoryId.size() <= 48 &&
+             (!('selectedBackgroundId' in data) || (data.selectedBackgroundId is string && data.selectedBackgroundId.size() >= 1 && data.selectedBackgroundId.size() <= 64)) &&
+             isValidStringList(data.unlockedPatterns, 64) &&
+             isValidStringList(data.unlockedAccessories, 64) &&
+             (!('unlockedBackgrounds' in data) || isValidStringList(data.unlockedBackgrounds, 64)) &&
+             data.upgradeLevels is map && data.upgradeLevels.size() <= 64 &&
+             data.dailyStreak is int && data.dailyStreak >= 0 && data.dailyStreak <= 36500 &&
              data.lastDailyClaimEpochDay is int && data.lastDailyClaimEpochDay >= 0 &&
-             isValidStringList(data.claimedQuestIds, 64) &&
-             isValidStringList(data.unlockedBadgeIds, 64) &&
-             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 40 &&
+             isValidStringList(data.claimedQuestIds, 128) &&
+             isValidStringList(data.unlockedBadgeIds, 128) &&
+             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 48 &&
              data.eventPurrsEarned is int && data.eventPurrsEarned >= 0 &&
              data.preferredCity is string && data.preferredCity.size() <= 80 &&
              data.weatherCheckedCount is int && data.weatherCheckedCount >= 0 &&
+             (!('statsPublic' in data) || data.statsPublic is bool) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 140)) &&
+             (!('avatarBase64' in data) || (data.avatarBase64 is string && data.avatarBase64.size() <= 60000)) &&
+             (!('bannerBase64' in data) || (data.bannerBase64 is string && data.bannerBase64.size() <= 120000)) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -76,20 +90,76 @@ service cloud.firestore {
              data.catName.size() <= 24 &&
              data.catPatternId is string &&
              data.catPatternId.size() >= 1 &&
-             data.catPatternId.size() <= 32 &&
+             data.catPatternId.size() <= 48 &&
              data.catAccessoryId is string &&
              data.catAccessoryId.size() >= 1 &&
-             data.catAccessoryId.size() <= 32 &&
-             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 40 &&
+             data.catAccessoryId.size() <= 48 &&
+             data.equippedBadgeId is string && data.equippedBadgeId.size() <= 48 &&
              data.totalPurrsEarned is int && data.totalPurrsEarned >= 0 &&
              data.totalPets is int && data.totalPets >= 0 &&
-             data.badgesCount is int && data.badgesCount >= 0 && data.badgesCount <= 64 &&
+             data.badgesCount is int && data.badgesCount >= 0 && data.badgesCount <= 128 &&
+             (!('statsPublic' in data) || data.statsPublic is bool) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 140)) &&
+             (!('avatarBase64' in data) || (data.avatarBase64 is string && data.avatarBase64.size() <= 60000)) &&
+             (!('bannerBase64' in data) || (data.bannerBase64 is string && data.bannerBase64.size() <= 120000)) &&
+             (!('publicRebirths' in data) || (data.publicRebirths is int && data.publicRebirths >= 0)) &&
+             (!('publicAscensions' in data) || (data.publicAscensions is int && data.publicAscensions >= 0)) &&
+             (!('publicDailyStreak' in data) || (data.publicDailyStreak is int && data.publicDailyStreak >= 0)) &&
+             (!('publicHighestComboX100' in data) || (data.publicHighestComboX100 is int && data.publicHighestComboX100 >= 0 && data.publicHighestComboX100 <= 100000)) &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidModerationRecord(data) {
+      return isValidId(data.userId) &&
+             data.status is string &&
+             data.status in ['ACTIVE', 'WARNED', 'TIMED_OUT', 'BANNED'] &&
+             data.reason is string &&
+             data.reason.size() <= 240 &&
+             data.timeoutUntilMillis is int &&
+             data.timeoutUntilMillis >= 0 &&
+             data.warningCount is int &&
+             data.warningCount >= 0 &&
+             data.warningCount <= 1000 &&
+             data.updatedByEmail is string &&
+             data.updatedByEmail.size() >= 1 &&
+             data.updatedByEmail.size() <= 120 &&
+             data.updatedByEmail == request.auth.token.email &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidGlobalAnnouncement(data) {
+      return isValidId(data.messageId) &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 80 &&
+             data.body is string &&
+             data.body.size() >= 1 &&
+             data.body.size() <= 320 &&
+             data.severity is string &&
+             data.severity in ['INFO', 'EVENT', 'WARNING'] &&
+             data.senderEmail is string &&
+             data.senderEmail.size() >= 1 &&
+             data.senderEmail.size() <= 120 &&
+             data.senderEmail == request.auth.token.email &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    function isValidLimitedItemCounter(data) {
+      return isValidId(data.itemId) &&
+             data.itemType is string &&
+             data.itemType in ['PATTERN', 'ACCESSORY', 'THEME', 'BACKGROUND'] &&
+             data.existCount is int &&
+             data.existCount >= 0 &&
+             data.existCount <= 100000000 &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
-      allow list: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid == userId || isAdmin());
 
       allow create: if isSignedIn() &&
                        isValidId(userId) &&
@@ -105,16 +175,19 @@ service cloud.firestore {
                        incoming().keys().hasOnly([
                          'userId', 'displayName', 'purrs', 'totalPurrsEarned', 'totalPets',
                          'selectedCatName', 'selectedPatternId', 'selectedAccessoryId',
-                         'unlockedPatterns', 'unlockedAccessories', 'upgradeLevels',
+                         'selectedBackgroundId', 'unlockedPatterns', 'unlockedAccessories',
+                         'unlockedBackgrounds', 'upgradeLevels',
                          'dailyStreak', 'lastDailyClaimEpochDay', 'claimedQuestIds',
                          'unlockedBadgeIds', 'equippedBadgeId', 'eventPurrsEarned',
-                         'preferredCity', 'weatherCheckedCount', 'createdAt', 'updatedAt'
+                         'preferredCity', 'weatherCheckedCount',
+                         'statsPublic', 'bio', 'avatarBase64', 'bannerBase64',
+                         'createdAt', 'updatedAt'
                        ]) &&
                        isValidUserProfile(incoming());
 
       allow update: if isSignedIn() &&
                        isValidId(userId) &&
-                       request.auth.uid == userId &&
+                       (request.auth.uid == userId || isAdmin()) &&
                        isValidUserProfile(incoming()) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
@@ -123,10 +196,13 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'displayName', 'purrs', 'totalPurrsEarned', 'totalPets',
                          'selectedCatName', 'selectedPatternId', 'selectedAccessoryId',
-                         'unlockedPatterns', 'unlockedAccessories', 'upgradeLevels',
+                         'selectedBackgroundId', 'unlockedPatterns', 'unlockedAccessories',
+                         'unlockedBackgrounds', 'upgradeLevels',
                          'dailyStreak', 'lastDailyClaimEpochDay', 'claimedQuestIds',
                          'unlockedBadgeIds', 'equippedBadgeId', 'eventPurrsEarned',
-                         'preferredCity', 'weatherCheckedCount', 'updatedAt'
+                         'preferredCity', 'weatherCheckedCount',
+                         'statsPublic', 'bio', 'avatarBase64', 'bannerBase64',
+                         'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
@@ -145,7 +221,10 @@ service cloud.firestore {
                        ]) &&
                        incoming().keys().hasOnly([
                          'userId', 'displayName', 'catName', 'catPatternId', 'catAccessoryId',
-                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount', 'updatedAt'
+                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount',
+                         'statsPublic', 'bio', 'avatarBase64', 'bannerBase64',
+                         'publicRebirths', 'publicAscensions', 'publicDailyStreak',
+                         'publicHighestComboX100', 'updatedAt'
                        ]) &&
                        isValidLeaderboardEntry(incoming());
 
@@ -157,10 +236,84 @@ service cloud.firestore {
                        incoming().totalPurrsEarned >= existing().totalPurrsEarned &&
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'displayName', 'catName', 'catPatternId', 'catAccessoryId',
-                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount', 'updatedAt'
+                         'equippedBadgeId', 'totalPurrsEarned', 'totalPets', 'badgesCount',
+                         'statsPublic', 'bio', 'avatarBase64', 'bannerBase64',
+                         'publicRebirths', 'publicAscensions', 'publicDailyStreak',
+                         'publicHighestComboX100', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && isValidId(entryId) && request.auth.uid == entryId;
+    }
+
+    match /moderation/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isAdmin() &&
+                       isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'status', 'reason', 'timeoutUntilMillis',
+                         'warningCount', 'updatedByEmail', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'status', 'reason', 'timeoutUntilMillis',
+                         'warningCount', 'updatedByEmail', 'updatedAt'
+                       ]) &&
+                       isValidModerationRecord(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(userId) &&
+                       isValidModerationRecord(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'status', 'reason', 'timeoutUntilMillis',
+                         'warningCount', 'updatedByEmail', 'updatedAt'
+                       ]);
+
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /global_messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId);
+      allow list: if isSignedIn();
+
+      allow create: if isAdmin() &&
+                       isValidId(messageId) &&
+                       incoming().messageId == messageId &&
+                       incoming().keys().hasAll([
+                         'messageId', 'title', 'body', 'severity', 'senderEmail', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'messageId', 'title', 'body', 'severity', 'senderEmail', 'createdAt'
+                       ]) &&
+                       isValidGlobalAnnouncement(incoming());
+
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(messageId);
+    }
+
+    match /limited_item_stats/{itemId} {
+      allow get: if isSignedIn() && isValidId(itemId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(itemId) &&
+                       incoming().itemId == itemId &&
+                       incoming().keys().hasAll(['itemId', 'itemType', 'existCount', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['itemId', 'itemType', 'existCount', 'updatedAt']) &&
+                       isValidLimitedItemCounter(incoming()) &&
+                       (incoming().existCount == 1 || isAdmin());
+
+      allow update: if isSignedIn() &&
+                       isValidId(itemId) &&
+                       isValidLimitedItemCounter(incoming()) &&
+                       incoming().itemId == existing().itemId &&
+                       incoming().itemType == existing().itemType &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['existCount', 'updatedAt']) &&
+                       (incoming().existCount == existing().existCount + 1 || isAdmin());
+
+      allow delete: if isAdmin() && isValidId(itemId);
     }
   }
 }

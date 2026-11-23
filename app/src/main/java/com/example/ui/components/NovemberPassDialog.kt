@@ -67,6 +67,7 @@ fun NovemberPassDialog(
   onClaimTierReward: (tier: Int, isVip: Boolean) -> Unit,
   onClaimAll: () -> Unit,
   onClaimPassQuest: (String) -> Unit,
+  onRestartPass: () -> Unit = {},
   onDismiss: () -> Unit,
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -125,8 +126,11 @@ fun NovemberPassDialog(
                   modifier = Modifier.size(26.dp),
                 )
                 Column {
+                  val cycleSuffix =
+                    if (passState.passCompletions > 0L) " • Cycle #${passState.passCompletions + 1}"
+                    else ""
                   Text(
-                    text = "November Pass",
+                    text = "November Pass$cycleSuffix",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
@@ -161,7 +165,7 @@ fun NovemberPassDialog(
               }
             }
 
-            // Free Track Progress Bar (+15% per tier)
+            // Free Track Progress Bar (+5% per tier)
             LinearProgressIndicator(
               progress = { freeProgressFrac },
               modifier = Modifier.fillMaxWidth().height(7.dp),
@@ -178,7 +182,7 @@ fun NovemberPassDialog(
                   if (currentFreeTier >= GameCatalog.NOVEMBER_PASS_MAX_TIER)
                     "Free Track MAX TIER!"
                   else
-                    "Free Tier ${currentFreeTier + 1}: ${GameCatalog.formatCompactPurrs(freeXpIntoStep)} / ${GameCatalog.formatCompactPurrs(freeStepTarget)} XP (+15%/tier)",
+                    "Free Tier ${currentFreeTier + 1}: ${GameCatalog.formatCompactPurrs(freeXpIntoStep)} / ${GameCatalog.formatCompactPurrs(freeStepTarget)} XP (+5%/tier)",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFFFFF8E1),
               )
@@ -189,7 +193,7 @@ fun NovemberPassDialog(
               )
             }
 
-            // VIP Track Progress Bar (Starts 500 XP, +30% per tier)
+            // VIP Track Progress Bar (Starts 500 XP, +15% per tier)
             LinearProgressIndicator(
               progress = { vipProgressFrac },
               modifier = Modifier.fillMaxWidth().height(7.dp),
@@ -202,7 +206,7 @@ fun NovemberPassDialog(
                 if (currentVipTier >= GameCatalog.NOVEMBER_PASS_MAX_TIER)
                   "VIP Track MAX TIER!"
                 else
-                  "VIP Tier ${currentVipTier + 1}: ${GameCatalog.formatCompactPurrs(vipXpIntoStep)} / ${GameCatalog.formatCompactPurrs(vipStepTarget)} XP (+30%/tier)",
+                  "VIP Tier ${currentVipTier + 1}: ${GameCatalog.formatCompactPurrs(vipXpIntoStep)} / ${GameCatalog.formatCompactPurrs(vipStepTarget)} XP (+15%/tier)",
               style = MaterialTheme.typography.labelSmall,
               color = Color(0xFFFFD54F),
               fontWeight = FontWeight.SemiBold,
@@ -306,7 +310,7 @@ fun NovemberPassDialog(
                         }
                         Text(
                           text =
-                            "VIP starts at 500 XP (+30% XP each tier). Tier 30 unlocks Golden Touch: every 30m equipped summons Golden Rain (4.0x for 3m)!",
+                            "VIP starts at 500 XP (+15% XP each tier). Tier 30 unlocks Golden Touch: every 30m equipped summons Golden Rain (4.0x for 3m)!",
                           style = MaterialTheme.typography.bodySmall,
                           color =
                             if (passState.vipUnlocked) Color(0xFFFFF8E1)
@@ -380,6 +384,53 @@ fun NovemberPassDialog(
               }
             }
 
+            if (GameCatalog.isNovemberPassCompleted(passState)) {
+              item {
+                Card(
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                  border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                  modifier = Modifier.fillMaxWidth().testTag("november_pass_completed_card"),
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                      Text(
+                        text = "November Pass Completed!",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      )
+                      Text(
+                        text =
+                          if (uiState.claimablePassCount > 0)
+                            "Claim your remaining ${uiState.claimablePassCount} tier reward(s), then restart to farm rewards again!"
+                          else
+                            "Ready for another run? Restarting resets Tiers 1–30 & XP while keeping VIP & unlocked skins.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f),
+                      )
+                    }
+                    Button(
+                      onClick = {
+                        if (uiState.claimablePassCount > 0) onClaimAll() else onRestartPass()
+                      },
+                      modifier = Modifier.height(48.dp).testTag("restart_november_pass_button"),
+                    ) {
+                      Text(
+                        text =
+                          if (uiState.claimablePassCount > 0) "Claim All (${uiState.claimablePassCount})"
+                          else "Restart Pass",
+                        maxLines = 1,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+
             // Tier 30 Grand Finale Preview Strip
             item {
               Card(
@@ -404,6 +455,11 @@ fun NovemberPassDialog(
                     Column {
                       Text("Tier 30 Free", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                       Text("November Maple", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                      Text(
+                        text = "${GameCatalog.formatCompactPurrs(uiState.existCountFor("PATTERN", GameCatalog.NOVEMBER_FREE_SKIN_ID))} Exist",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
                     }
                   }
                   Row(
@@ -419,6 +475,11 @@ fun NovemberPassDialog(
                     Column {
                       Text("Tier 30 VIP", style = MaterialTheme.typography.labelSmall, color = Color(0xFFD48800))
                       Text("Golden Touch", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                      Text(
+                        text = "${GameCatalog.formatCompactPurrs(uiState.existCountFor("PATTERN", GameCatalog.GOLDEN_TOUCH_SKIN_ID))} Exist",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
                     }
                   }
                 }
@@ -433,14 +494,14 @@ fun NovemberPassDialog(
               ) {
                 Spacer(modifier = Modifier.width(42.dp))
                 Text(
-                  text = "FREE TRACK (+15%/tier)",
+                  text = "FREE TRACK (+5%/tier)",
                   style = MaterialTheme.typography.labelSmall,
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary,
                   modifier = Modifier.weight(1f),
                 )
                 Text(
-                  text = "VIP TRACK (+30%/tier)",
+                  text = "VIP TRACK (+15%/tier)",
                   style = MaterialTheme.typography.labelSmall,
                   fontWeight = FontWeight.Bold,
                   color = Color(0xFFD48800),
@@ -450,6 +511,18 @@ fun NovemberPassDialog(
             }
 
             items(GameCatalog.novemberPassTiers, key = { it.tier }) { tierDef ->
+              val freeExist =
+                when (tierDef.freeReward.kind) {
+                  PassRewardKind.SKIN -> uiState.existCountFor("PATTERN", tierDef.freeReward.itemId)
+                  PassRewardKind.ACCESSORY -> uiState.existCountFor("ACCESSORY", tierDef.freeReward.itemId)
+                  else -> null
+                }
+              val vipExist =
+                when (tierDef.vipReward.kind) {
+                  PassRewardKind.SKIN -> uiState.existCountFor("PATTERN", tierDef.vipReward.itemId)
+                  PassRewardKind.ACCESSORY -> uiState.existCountFor("ACCESSORY", tierDef.vipReward.itemId)
+                  else -> null
+                }
               BattlePassTierRow(
                 tierDef = tierDef,
                 currentFreeTier = currentFreeTier,
@@ -457,6 +530,8 @@ fun NovemberPassDialog(
                 vipUnlocked = passState.vipUnlocked,
                 freeClaimed = tierDef.tier in passState.claimedFreeTiers,
                 vipClaimed = tierDef.tier in passState.claimedVipTiers,
+                freeExistCount = freeExist,
+                vipExistCount = vipExist,
                 onClaimFree = { onClaimTierReward(tierDef.tier, false) },
                 onClaimVip = { onClaimTierReward(tierDef.tier, true) },
               )
@@ -627,6 +702,8 @@ private fun BattlePassTierRow(
   vipUnlocked: Boolean,
   freeClaimed: Boolean,
   vipClaimed: Boolean,
+  freeExistCount: Long?,
+  vipExistCount: Long?,
   onClaimFree: () -> Unit,
   onClaimVip: () -> Unit,
 ) {
@@ -666,6 +743,7 @@ private fun BattlePassTierRow(
     PassTrackTile(
       label = tierDef.freeReward.label,
       stepXpLabel = "${GameCatalog.formatCompactPurrs(freeStepReq)} XP",
+      existCount = freeExistCount,
       isSkinOrSpecial =
         tierDef.freeReward.kind == PassRewardKind.SKIN ||
           tierDef.freeReward.kind == PassRewardKind.UPGRADE_LEVEL,
@@ -681,6 +759,7 @@ private fun BattlePassTierRow(
     PassTrackTile(
       label = tierDef.vipReward.label,
       stepXpLabel = "${GameCatalog.formatCompactPurrs(vipStepReq)} XP",
+      existCount = vipExistCount,
       isSkinOrSpecial =
         tierDef.vipReward.kind == PassRewardKind.SKIN ||
           tierDef.vipReward.kind == PassRewardKind.ACCESSORY ||
@@ -700,6 +779,7 @@ private fun BattlePassTierRow(
 private fun PassTrackTile(
   label: String,
   stepXpLabel: String,
+  existCount: Long?,
   isSkinOrSpecial: Boolean,
   isVipTile: Boolean,
   isReached: Boolean,
@@ -788,6 +868,14 @@ private fun PassTrackTile(
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
+      if (existCount != null) {
+        Text(
+          text = "${GameCatalog.formatCompactPurrs(existCount)} Exist",
+          style = MaterialTheme.typography.labelSmall,
+          fontWeight = FontWeight.Bold,
+          color = if (isVipTile) Color(0xFF8C5300) else MaterialTheme.colorScheme.primary,
+        )
+      }
     }
   }
 }

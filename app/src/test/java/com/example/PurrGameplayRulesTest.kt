@@ -3,12 +3,17 @@ package com.example
 import com.example.audio.CatSoundEffect
 import com.example.audio.CustomMusicTrack
 import com.example.audio.MusicTrack
+import com.example.audio.RepeatMode
 import com.example.audio.SoundManager
 import com.example.data.model.BattlePassState
 import com.example.data.model.ChallengeProgressState
 import com.example.data.model.DailyBonusPrizeType
+import com.example.data.model.FeastZoneActivityType
+import com.example.data.model.FestivalTier
 import com.example.data.model.GameCatalog
+import com.example.data.model.InventoryEventGroup
 import com.example.data.model.MoonlightPhase
+import com.example.data.model.NavigationLayoutFormat
 import com.example.data.model.PassRewardKind
 import com.example.data.model.PlayerStatsState
 import com.example.data.model.UpgradeCategory
@@ -17,7 +22,6 @@ import com.example.data.weather.WeatherConditionKind
 import com.example.data.weather.WeatherRepository
 import com.example.ui.theme.AppColorTheme
 import com.example.ui.theme.ThemeMode
-import java.util.Calendar
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -90,8 +94,8 @@ class PurrGameplayRulesTest {
     val clickUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.CLICK }
     val ppsUpgrades = GameCatalog.upgrades.filter { it.category == UpgradeCategory.PER_SECOND }
 
-    assertEquals(8, clickUpgrades.size)
-    assertEquals(9, ppsUpgrades.size)
+    assertEquals(11, clickUpgrades.size)
+    assertEquals(12, ppsUpgrades.size)
 
     for (i in 1 until clickUpgrades.size) {
       assertTrue(clickUpgrades[i].baseCost > clickUpgrades[i - 1].baseCost)
@@ -100,8 +104,8 @@ class PurrGameplayRulesTest {
       assertTrue(ppsUpgrades[i].baseCost > ppsUpgrades[i - 1].baseCost)
     }
 
-    assertEquals(24, GameCatalog.quests.size)
-    assertEquals(24, GameCatalog.badges.size)
+    assertEquals(25, GameCatalog.quests.size)
+    assertEquals(26, GameCatalog.badges.size)
     assertTrue((GameCatalog.quests.find { it.id == "q_first_pets" }?.target ?: 0L) >= 100L)
     assertTrue((GameCatalog.quests.maxOf { it.target }) >= 1_000_000_000L)
   }
@@ -146,18 +150,140 @@ class PurrGameplayRulesTest {
   }
 
   @Test
-  fun periodicEvents_runStarlightUntilNov18AndSwitchToThanksgivingOnNov19() {
-    val nov15 =
-      Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 15, 12, 0, 0) }.timeInMillis
-    val nov18Late =
-      Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 18, 22, 0, 0) }.timeInMillis
-    val nov19Start =
-      Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 19, 10, 0, 0) }.timeInMillis
-
-    assertEquals("starlight_festival", GameCatalog.currentPeriodicEvent(nov15).first.id)
-    assertEquals("starlight_festival", GameCatalog.currentPeriodicEvent(nov18Late).first.id)
-    assertEquals("thanksgiving_harvest", GameCatalog.currentPeriodicEvent(nov19Start).first.id)
+  fun thanksgivingPartTwo_replacesStarlightWithHourlyRegularAndGravyRushFestivals() {
+    assertEquals(1, GameCatalog.periodicEvents.size)
+    assertEquals("thanksgiving_part_2", GameCatalog.periodicEvents.first().id)
+    assertEquals("thanksgiving_part_2", GameCatalog.currentPeriodicEvent().first.id)
+    assertTrue(GameCatalog.thanksgivingSneakPeek.dateWindow.contains("LIVE", ignoreCase = true))
     assertTrue(GameCatalog.thanksgivingSneakPeek.previewHighlights.isNotEmpty())
+
+    // Hourly Festival tiers: Part 2 Regular (1.75x, 25% spawn) vs Gravy Rush (3.0x, 45% spawn)
+    val regular = GameCatalog.festivalTierFor(isMega = false)
+    val mega = GameCatalog.festivalTierFor(isMega = true)
+    assertEquals(FestivalTier.REGULAR, regular)
+    assertEquals(1.75, regular.clickMultiplier, 0.001)
+    assertEquals(1.75, regular.ppsMultiplier, 0.001)
+    assertEquals(25, regular.turkeySpawnChancePercent)
+    assertEquals(FestivalTier.MEGA, mega)
+    assertEquals(3.0, mega.clickMultiplier, 0.001)
+    assertEquals(3.0, mega.ppsMultiplier, 0.001)
+    assertEquals(45, mega.turkeySpawnChancePercent)
+
+    // Seeded Mega Festival roll yields ~33% Gravy Rush (exact 33% threshold)
+    val rng = Random(2026)
+    var megaCount = 0
+    repeat(1000) {
+      if (GameCatalog.rollHourlyFestivalIsMega(rng)) megaCount++
+    }
+    assertTrue("Expected ~33% mega festivals, got $megaCount", megaCount in 280..380)
+
+    // Turkey & Golden Gobbler spawn probability increases from Regular to Gravy Rush
+    val spawnRngA = Random(77)
+    val spawnRngB = Random(77)
+    var regSpawns = 0
+    var megaSpawns = 0
+    var goldenGravySpawns = 0
+    val goldenRng = Random(99)
+    repeat(500) {
+      if (GameCatalog.shouldSpawnTurkey(FestivalTier.REGULAR, spawnRngA)) regSpawns++
+      if (GameCatalog.shouldSpawnTurkey(FestivalTier.MEGA, spawnRngB)) megaSpawns++
+      if (GameCatalog.shouldSpawnGoldenGobbler(FestivalTier.MEGA, goldenRng)) goldenGravySpawns++
+    }
+    assertTrue(regSpawns in 95..165)
+    assertTrue(megaSpawns > regSpawns)
+    assertTrue(megaSpawns in 185..265)
+    assertTrue(goldenGravySpawns in 135..215)
+    assertEquals(3L, GameCatalog.GOLDEN_GOBBLER_REWARD)
+
+    // Part 1 + Part 2 Turkey-only cosmetics, themes & backgrounds cost strictly Turkeys
+    assertEquals(5, GameCatalog.turkeyEventPatterns.size)
+    assertEquals(5, GameCatalog.turkeyEventAccessories.size)
+    assertEquals(3, AppColorTheme.turkeyEventThemes.size)
+    assertEquals(4, GameCatalog.backgrounds.count { it.turkeyCost > 0L })
+    assertTrue(GameCatalog.turkeyEventPatterns.all { it.cost == 0L && it.turkeyCost > 0L })
+    assertTrue(GameCatalog.turkeyEventAccessories.all { it.cost == 0L && it.turkeyCost > 0L })
+    assertTrue(AppColorTheme.turkeyEventThemes.all { it.eventCost == 0L && it.turkeyCost > 0L })
+    assertTrue(GameCatalog.isEventItemExemptPattern("pumpkin_pie_tabby"))
+    assertTrue(GameCatalog.isEventItemExemptPattern("roasted_crown_calico"))
+    assertTrue(GameCatalog.isEventItemExemptPattern("velvet_gravy_tabby"))
+    assertTrue(GameCatalog.isEventItemExemptAccessory("pilgrim_hat"))
+    assertTrue(GameCatalog.isEventItemExemptAccessory("cornucopia_horn"))
+    assertTrue(GameCatalog.isEventItemExemptAccessory("gravy_ladle"))
+    assertFalse(GameCatalog.evaluateThemeRequirement(AppColorTheme.AUTUMN_CRANBERRY, UserProfile()).first)
+    assertFalse(GameCatalog.evaluateThemeRequirement(AppColorTheme.GOLDEN_HARVEST, UserProfile()).first)
+    assertFalse(GameCatalog.evaluateThemeRequirement(AppColorTheme.CORNUCOPIA_ROYALE, UserProfile()).first)
+
+    // Part 2 Sovereign badge quest
+    val part2Quest = GameCatalog.quests.find { it.id == "q_part2_feast" }
+    assertTrue(part2Quest != null && part2Quest.badgeId == "part2_feast_sovereign")
+    assertEquals(
+      15L,
+      part2Quest!!.progressExtractor(UserProfile(), ChallengeProgressState(totalTurkeysEarned = 15L), PlayerStatsState()),
+    )
+
+    // Turkey Gato NPC talks unlock 5 Part 2 Map landmarks + Hourly Festival Quests track & award Turkeys
+    assertTrue(GameCatalog.turkeyGatoDialogues.size > GameCatalog.TURKEY_GATO_MAP_TALKS)
+    assertEquals(5, GameCatalog.part2MapLandmarks.size)
+    val questCheck =
+      GameCatalog.evaluateHourlyFestivalQuests(
+        ChallengeProgressState(
+          festHourPets = 46L,
+          festHourTurkeysTapped = 2L,
+          claimedFestivalQuestIds = listOf("tq_pets_35"),
+        )
+      )
+    assertEquals(5, questCheck.size)
+    val warmup = questCheck.first { it.template.id == "tq_pets_35" }
+    val spotter = questCheck.first { it.template.id == "tq_turkeys_3" }
+    assertTrue(warmup.isCompleted && warmup.isClaimed)
+    assertTrue(spotter.isCompleted && !spotter.isClaimed)
+
+    // 5-Minute Turkey Spawn Rush window per hourly reroll
+    assertEquals(5L * 60L * 1000L, GameCatalog.TURKEY_SPAWN_WINDOW_MS)
+    assertTrue(GameCatalog.isTurkeySpawnWindowActive(0L))
+    assertEquals(GameCatalog.TURKEY_SPAWN_WINDOW_MS, GameCatalog.turkeySpawnWindowRemainingMillis(0L))
+    assertTrue(GameCatalog.isTurkeySpawnWindowActive(299_999L))
+    assertEquals(1L, GameCatalog.turkeySpawnWindowRemainingMillis(299_999L))
+    assertFalse(GameCatalog.isTurkeySpawnWindowActive(300_000L))
+    assertEquals(0L, GameCatalog.turkeySpawnWindowRemainingMillis(300_000L))
+    assertFalse(GameCatalog.isTurkeySpawnWindowActive(3_599_999L))
+    assertTrue(GameCatalog.isTurkeySpawnWindowActive(3_600_000L))
+    assertTrue(GameCatalog.turkeyRushStatusText(60_000L).contains("spawning", ignoreCase = true))
+    assertTrue(GameCatalog.turkeyRushStatusText(600_000L).contains("Next", ignoreCase = true))
+
+    // Strict Event Separation in Inventory (Starlight Catnip archive never mixes with Thanksgiving)
+    assertEquals(
+      InventoryEventGroup.THANKSGIVING_PART_1,
+      InventoryEventGroup.fromSourceLabel("Thanksgiving Part 1"),
+    )
+    assertEquals(
+      InventoryEventGroup.THANKSGIVING_PART_1,
+      InventoryEventGroup.fromSourceLabel("Thanksgiving Part 2"),
+    )
+    assertEquals(
+      InventoryEventGroup.STARLIGHT_CATNIP,
+      InventoryEventGroup.fromSourceLabel("Limited Event"),
+    )
+    assertEquals(
+      InventoryEventGroup.NOVEMBER_PASS,
+      InventoryEventGroup.fromSourceLabel("November Pass VIP"),
+    )
+    assertEquals(
+      InventoryEventGroup.GEM_VAULT,
+      InventoryEventGroup.fromSourceLabel("Gem Vault"),
+    )
+    assertEquals(
+      InventoryEventGroup.DAILY_STREAKS,
+      InventoryEventGroup.fromSourceLabel("Day 7 Prize"),
+    )
+    assertEquals(
+      InventoryEventGroup.SECRET_VAULT,
+      InventoryEventGroup.fromSourceLabel("Secret Code Vault"),
+    )
+    assertNotEquals(
+      InventoryEventGroup.fromSourceLabel("Thanksgiving Part 1"),
+      InventoryEventGroup.fromSourceLabel("Limited Event"),
+    )
   }
 
   @Test
@@ -185,8 +311,8 @@ class PurrGameplayRulesTest {
     assertEquals(200_000L, GameCatalog.rebirthCost(0L, isHardcore = true))
 
     assertEquals(1.0, GameCatalog.rebirthMultiplier(0L), 0.001)
-    assertEquals(1.5, GameCatalog.rebirthMultiplier(1L), 0.001)
-    assertEquals(2.0, GameCatalog.rebirthMultiplier(2L), 0.001)
+    assertEquals(1.25, GameCatalog.rebirthMultiplier(1L), 0.001)
+    assertEquals(1.5, GameCatalog.rebirthMultiplier(2L), 0.001)
 
     assertTrue(GameCatalog.isEventItemExemptPattern("lantern_koi"))
     assertTrue(GameCatalog.isEventItemExemptPattern("lunar_eclipse"))
@@ -200,13 +326,25 @@ class PurrGameplayRulesTest {
   fun gatoAscensionAndAscensionTree_enforceFiveRebirthsPrerequisitesAndDiscounts() {
     assertEquals(5L, GameCatalog.ASCENSION_REQUIRED_REBIRTHS)
     assertEquals(1L, GameCatalog.ASCENSION_RESET_REBIRTH_COUNT)
-    assertEquals(6, GameCatalog.ascensionUpgrades.size)
+    assertEquals(12, GameCatalog.ascensionUpgrades.size)
+    val expectedNewNodes =
+      listOf(
+        "asc_gem_seeker",
+        "asc_offline_mastery",
+        "asc_pass_scholar",
+        "asc_click_supernova",
+        "asc_passive_symphony",
+        "asc_cosmic_sovereign",
+      )
+    expectedNewNodes.forEach { id ->
+      assertTrue("Missing Ring 2 node $id", GameCatalog.ascensionUpgrades.any { it.id == id })
+    }
 
     // Multiplier resets to 1.0x (0 bonus steps) even after Rebirths reset to 1
     assertEquals(1.0, GameCatalog.rebirthMultiplier(rebirthBonusSteps = 0L), 0.001)
-    // With Eternal Rebirth Echo, each Rebirth bonus step gives +1.0x instead of +0.5x
+    // With Eternal Rebirth Echo, each Rebirth bonus step gives +0.45x instead of +0.25x
     assertEquals(
-      3.0,
+      1.9,
       GameCatalog.rebirthMultiplier(
         rebirthBonusSteps = 2L,
         unlockedAscensionIds = listOf("asc_rebirth_echo"),
@@ -363,6 +501,19 @@ class PurrGameplayRulesTest {
     assertTrue(fortyHoursAscended.isHardcore)
     assertEquals(648_000L, fortyHoursAscended.purrsEarned)
 
+    // With Dream Weaver (asc_offline_mastery): 90% efficiency & 48h cap (172,800s)
+    val fiftyHoursMastery =
+      GameCatalog.computeOfflineEarnings(
+        50L * 3600L * 1000L,
+        10L,
+        isHardcore = false,
+        hasAscended = true,
+        unlockedAscensionIds = listOf("asc_offline_mastery"),
+      )!!
+    assertEquals(172_800L, fiftyHoursMastery.cappedSeconds)
+    assertEquals(90, fiftyHoursMastery.efficiencyPercent)
+    assertEquals(1_555_200L, fiftyHoursMastery.purrsEarned)
+
     assertEquals("2h 5m 10s", GameCatalog.formatElapsedDuration((2 * 3600 + 5 * 60 + 10) * 1000L))
   }
 
@@ -376,14 +527,15 @@ class PurrGameplayRulesTest {
     assertEquals(PassRewardKind.SKIN, tier30.vipReward.kind)
     assertEquals(GameCatalog.GOLDEN_TOUCH_SKIN_ID, tier30.vipReward.itemId)
 
-    // Balanced Progressive XP Scaling: Free (100 + 15%/tier) & VIP (500 + 30%/tier)
+    // Nerfed Progressive XP Scaling: Free (100 + 5%/tier) & VIP (500 + 15%/tier)
     assertEquals(100L, GameCatalog.freeStepXpForTier(1))
-    assertTrue(GameCatalog.freeStepXpForTier(2) > GameCatalog.freeStepXpForTier(1))
+    assertEquals(105L, GameCatalog.freeStepXpForTier(2))
+    assertEquals(110L, GameCatalog.freeStepXpForTier(3))
     assertTrue(GameCatalog.freeStepXpForTier(30) > GameCatalog.freeStepXpForTier(15))
 
     assertEquals(500L, GameCatalog.vipStepXpForTier(1))
-    assertEquals(650L, GameCatalog.vipStepXpForTier(2))
-    assertEquals(845L, GameCatalog.vipStepXpForTier(3))
+    assertEquals(575L, GameCatalog.vipStepXpForTier(2))
+    assertEquals(661L, GameCatalog.vipStepXpForTier(3))
     assertTrue(GameCatalog.vipStepXpForTier(30) > GameCatalog.freeStepXpForTier(30))
 
     assertEquals(0, GameCatalog.freeTierFromXp(0L))
@@ -392,8 +544,26 @@ class PurrGameplayRulesTest {
 
     assertEquals(0, GameCatalog.vipTierFromXp(499L))
     assertEquals(1, GameCatalog.vipTierFromXp(500L))
-    assertEquals(2, GameCatalog.vipTierFromXp(500L + 650L))
+    assertEquals(2, GameCatalog.vipTierFromXp(500L + 575L))
     assertEquals(30, GameCatalog.vipTierFromXp(GameCatalog.vipTotalXpForTier(30)))
+
+    // November Pass completion check respects whether VIP is unlocked
+    assertFalse(GameCatalog.isNovemberPassCompleted(BattlePassState(passXp = 0L, vipUnlocked = false)))
+    assertTrue(
+      GameCatalog.isNovemberPassCompleted(
+        BattlePassState(passXp = GameCatalog.freeTotalXpForTier(30), vipUnlocked = false)
+      )
+    )
+    assertFalse(
+      GameCatalog.isNovemberPassCompleted(
+        BattlePassState(passXp = GameCatalog.freeTotalXpForTier(30), vipUnlocked = true)
+      )
+    )
+    assertTrue(
+      GameCatalog.isNovemberPassCompleted(
+        BattlePassState(passXp = GameCatalog.vipTotalXpForTier(30), vipUnlocked = true)
+      )
+    )
 
     // Hourly Battle Pass Quests refresh deterministically per epoch hour & scale with tier
     val hourA = 500_000L
@@ -457,10 +627,10 @@ class PurrGameplayRulesTest {
       )
     assertTrue(qualifiedVip.first)
 
-    // Golden Touch 30m equip -> 3m Golden Rain 4.0x
+    // Golden Touch 30m equip -> 3m Golden Rain 2.0x
     assertEquals(30L * 60L * 1000L, GameCatalog.GOLDEN_TOUCH_INTERVAL_MS)
     assertEquals(3L * 60L * 1000L, GameCatalog.GOLDEN_RAIN_DURATION_MS)
-    assertEquals(4.0, GameCatalog.GOLDEN_RAIN_MULTIPLIER, 0.001)
+    assertEquals(2.0, GameCatalog.GOLDEN_RAIN_MULTIPLIER, 0.001)
 
     // Rebirth & Ascension preserve November Pass skins & VIP accessories
     assertTrue(GameCatalog.isEventItemExemptPattern(GameCatalog.NOVEMBER_FREE_SKIN_ID))
@@ -471,12 +641,16 @@ class PurrGameplayRulesTest {
 
   @Test
   fun rareGemsEconomy_rewardsScalingCharmFrenzyAndExemptCosmetics() {
-    // Rare Drop rates, Rebirth, Ascension, Frenzy & Charm constants
-    assertEquals(6, GameCatalog.GEM_DROP_RATE_NORMAL_PER_1000)
-    assertEquals(10, GameCatalog.GEM_DROP_RATE_BOOSTED_PER_1000)
-    assertEquals(3L, GameCatalog.REBIRTH_GEM_REWARD)
-    assertEquals(10L, GameCatalog.ASCENSION_GEM_REWARD)
-    assertEquals(3.0, GameCatalog.GEM_FRENZY_MULTIPLIER, 0.001)
+    // Rebalanced Rare Gem drop rates, Rebirth, Ascension, Frenzy & Charm constants
+    assertEquals(2, GameCatalog.GEM_DROP_RATE_NORMAL_PER_1000)
+    assertEquals(4, GameCatalog.GEM_DROP_RATE_BOOSTED_PER_1000)
+    assertEquals(2, GameCatalog.gemDropRatePer1000(boostedSky = false, unlockedAscensionIds = emptyList()))
+    assertEquals(4, GameCatalog.gemDropRatePer1000(boostedSky = true, unlockedAscensionIds = emptyList()))
+    assertEquals(3, GameCatalog.gemDropRatePer1000(boostedSky = false, unlockedAscensionIds = listOf("asc_gem_seeker")))
+    assertEquals(6, GameCatalog.gemDropRatePer1000(boostedSky = true, unlockedAscensionIds = listOf("asc_gem_seeker")))
+    assertEquals(1L, GameCatalog.REBIRTH_GEM_REWARD)
+    assertEquals(4L, GameCatalog.ASCENSION_GEM_REWARD)
+    assertEquals(1.85, GameCatalog.GEM_FRENZY_MULTIPLIER, 0.001)
     assertEquals(120_000L, GameCatalog.GEM_FRENZY_DURATION_MS)
     assertEquals(4L, GameCatalog.GEM_FRENZY_COST)
 
@@ -484,19 +658,21 @@ class PurrGameplayRulesTest {
     assertEquals(8L, GameCatalog.gemCharmCost(1L))
     assertEquals(11L, GameCatalog.gemCharmCost(2L))
     assertEquals(1.0, GameCatalog.gemCharmMultiplier(0L), 0.001)
-    assertEquals(1.5, GameCatalog.gemCharmMultiplier(2L), 0.001)
+    assertEquals(1.2, GameCatalog.gemCharmMultiplier(2L), 0.001)
 
-    // Quests, Weekly tiers, Endless Streaks (Day 7 & Day 14), and November Pass grant Rare Gems
-    assertTrue(GameCatalog.quests.all { it.rewardGems >= 1L })
-    assertTrue(GameCatalog.weeklyLeaderboardTiers.all { it.gemsReward >= 1L })
-    assertEquals(15L, GameCatalog.weeklyTierForRank(1).gemsReward)
+    // Mid/Late Quests, Top-25 Weekly tiers, Endless Streaks (Day 7 & Day 14), and Pass Tiers grant Rare Gems
+    assertEquals(0L, GameCatalog.quests.first { it.id == "q_first_pets" }.rewardGems)
+    assertTrue(GameCatalog.quests.count { it.rewardGems >= 1L } >= 10)
+    assertTrue(GameCatalog.weeklyLeaderboardTiers.filter { it.maxRankInclusive <= 25 }.all { it.gemsReward >= 1L })
+    assertEquals(0L, GameCatalog.weeklyTierForRank(null).gemsReward)
+    assertEquals(6L, GameCatalog.weeklyTierForRank(1).gemsReward)
 
     val day7Payout = GameCatalog.computeEndlessDailyPayout(7L)
-    assertEquals(2L, day7Payout.bonusGems)
+    assertEquals(1L, day7Payout.bonusGems)
     val day14Payout = GameCatalog.computeEndlessDailyPayout(14L)
-    assertEquals(5L, day14Payout.bonusGems)
+    assertEquals(2L, day14Payout.bonusGems)
     val day28Payout = GameCatalog.computeEndlessDailyPayout(28L)
-    assertEquals(6L, day28Payout.bonusGems)
+    assertEquals(3L, day28Payout.bonusGems)
 
     val tier10 = GameCatalog.novemberPassTiers.first { it.tier == 10 }
     val tier15 = GameCatalog.novemberPassTiers.first { it.tier == 15 }
@@ -515,12 +691,44 @@ class PurrGameplayRulesTest {
   }
 
   @Test
-  fun updateBlogPosts_includeV9AndFullArticleReaderParagraphs() {
+  fun updateBlogPosts_includeV14AndFullArticleReaderParagraphs() {
     assertTrue(GameCatalog.blogPosts.isNotEmpty())
     val latest = GameCatalog.blogPosts.first()
-    assertEquals("v9.0", latest.version)
+    assertEquals("v23.0", latest.version)
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v20.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v15.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v14.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v13.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v12.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v11.0" })
+    assertTrue(GameCatalog.blogPosts.any { it.version == "v9.0" })
     assertTrue(GameCatalog.blogPosts.all { it.fullArticleParagraphs.isNotEmpty() })
     assertTrue(GameCatalog.blogPosts.all { it.readTimeLabel.isNotBlank() && it.authorTag.isNotBlank() })
+
+    assertEquals(NavigationLayoutFormat.BOTTOM_BAR, NavigationLayoutFormat.fromId("unknown"))
+    assertEquals(NavigationLayoutFormat.SIDE_RAIL, NavigationLayoutFormat.fromId("side_rail"))
+    assertEquals(NavigationLayoutFormat.CLEAN_FLOATING, NavigationLayoutFormat.fromId("clean_floating"))
+  }
+
+  @Test
+  fun v11Features_adminEmailRepeatModesAndLimitedExistCatalog_validateAccurately() {
+    assertTrue(GameCatalog.isAdminEmail("silvestrecastaneda9@gmail.com"))
+    assertTrue(GameCatalog.isAdminEmail("  SilvestreCastaneda9@GMAIL.com "))
+    assertFalse(GameCatalog.isAdminEmail("other@gmail.com"))
+    assertFalse(GameCatalog.isAdminEmail(null))
+
+    assertEquals(RepeatMode.ALL, RepeatMode.OFF.next())
+    assertEquals(RepeatMode.ONE, RepeatMode.ALL.next())
+    assertEquals(RepeatMode.OFF, RepeatMode.ONE.next())
+
+    val limitedRefs = GameCatalog.limitedTimeCatalogRefs()
+    assertTrue(limitedRefs.any { it.first == "pat_golden_touch_cat" && it.second == "PATTERN" })
+    assertTrue(limitedRefs.any { it.first == "pat_roasted_crown_calico" && it.second == "PATTERN" })
+    assertTrue(limitedRefs.any { it.first == "acc_diamond_crown" && it.second == "ACCESSORY" })
+    assertTrue(limitedRefs.any { it.first == "acc_cornucopia_horn" && it.second == "ACCESSORY" })
+    assertTrue(limitedRefs.any { it.first == "thm_hacker_protocol" && it.second == "THEME" })
+    assertTrue(limitedRefs.any { it.first == "thm_cornucopia_royale" && it.second == "THEME" })
+    assertTrue(limitedRefs.any { it.first == "bg_cornucopia_citadel" && it.second == "BACKGROUND" })
   }
 
   @Test
@@ -597,5 +805,49 @@ class PurrGameplayRulesTest {
       1L,
       quest.progressExtractor(UserProfile(), ChallengeProgressState(hackerVaultUnlocked = true), PlayerStatsState()),
     )
+  }
+
+  @Test
+  fun catComputer_passwordRiddleAndChallengeFlags_workAccurately() {
+    assertTrue(GameCatalog.CAT_COMPUTER_RIDDLE.isNotBlank())
+    assertTrue(GameCatalog.CAT_COMPUTER_HINT.isNotBlank())
+    assertTrue(GameCatalog.isValidCatComputerPassword("cat"))
+    assertTrue(GameCatalog.isValidCatComputerPassword("  CAT "))
+    assertTrue(GameCatalog.isValidCatComputerPassword("Cats"))
+    assertTrue(GameCatalog.isValidCatComputerPassword("Gato"))
+    assertFalse(GameCatalog.isValidCatComputerPassword("dog"))
+    assertFalse(GameCatalog.isValidCatComputerPassword(""))
+
+    val defaultState = ChallengeProgressState()
+    assertFalse(defaultState.catComputerUnlocked)
+    assertFalse(defaultState.dogComputerSearched)
+    assertFalse(defaultState.citadelBossGlitchSeen)
+  }
+
+  @Test
+  fun part2MapZonesAndBossCutscene_validateAccurately() {
+    val landmarks = GameCatalog.part2MapLandmarks
+    assertEquals(5, landmarks.size)
+    val byId = landmarks.associateBy { it.id }
+    assertEquals(FeastZoneActivityType.MINIGAME_CRANBERRY, byId["cranberry_bog"]?.activityType)
+    assertEquals(FeastZoneActivityType.MINIGAME_BAKERY, byId["pumpkin_bakery"]?.activityType)
+    assertEquals(FeastZoneActivityType.FISHING, byId["gravy_falls"]?.activityType)
+    assertEquals(FeastZoneActivityType.COOKING, byId["turkey_gato_hall"]?.activityType)
+    assertEquals(FeastZoneActivityType.BOSS_BATTLE, byId["cornucopia_citadel"]?.activityType)
+    assertTrue(landmarks.all { it.actionLabel.isNotBlank() && it.rewardSummary.isNotBlank() })
+
+    val crown = GameCatalog.accessories.find { it.id == "melted_solstice_crown" }
+    assertTrue(crown != null)
+    assertEquals(0L, crown!!.cost)
+    assertTrue(crown.isEventExclusive)
+    assertEquals("December 1st Teaser", crown.unlockSourceLabel)
+    assertTrue(GameCatalog.isEventItemExemptAccessory("melted_solstice_crown"))
+    assertEquals(
+      InventoryEventGroup.SOLSTICE_OMEN,
+      InventoryEventGroup.fromSourceLabel(crown.unlockSourceLabel),
+    )
+
+    val limitedRefs = GameCatalog.limitedTimeCatalogRefs()
+    assertTrue(limitedRefs.any { it.first == "acc_melted_solstice_crown" && it.second == "ACCESSORY" })
   }
 }

@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Private player game state, upgrades, cat customization, daily streak, quests, and badges.",
+      "description": "Private player game state, upgrades, cat customization, daily streak, quests, badges, and profile customization.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Authenticated Firebase Auth UID." },
@@ -13,8 +13,10 @@
         "selectedCatName": { "type": "string", "description": "Custom name given to the player's cat." },
         "selectedPatternId": { "type": "string", "description": "Equipped cat coat pattern ID." },
         "selectedAccessoryId": { "type": "string", "description": "Equipped cat accessory ID." },
+        "selectedBackgroundId": { "type": "string", "description": "Equipped sanctuary room background ID." },
         "unlockedPatterns": { "type": "array", "description": "List of unlocked pattern IDs." },
         "unlockedAccessories": { "type": "array", "description": "List of unlocked accessory IDs." },
+        "unlockedBackgrounds": { "type": "array", "description": "List of unlocked sanctuary room background IDs." },
         "upgradeLevels": { "type": "object", "description": "Map of shop upgrade ID to owned level." },
         "dailyStreak": { "type": "integer", "description": "Current daily login reward streak." },
         "lastDailyClaimEpochDay": { "type": "integer", "description": "UTC epoch day of the last claimed daily reward." },
@@ -24,6 +26,10 @@
         "eventPurrsEarned": { "type": "integer", "description": "Purrs earned during periodic limited-time events." },
         "preferredCity": { "type": "string", "description": "Selected weather city name." },
         "weatherCheckedCount": { "type": "integer", "description": "Number of live weather syncs completed." },
+        "statsPublic": { "type": "boolean", "description": "Whether detailed lifetime stats are visible when others tap the player's leaderboard profile." },
+        "bio": { "type": "string", "description": "Short custom profile bio shown on the player's leaderboard card." },
+        "avatarBase64": { "type": "string", "description": "Compressed custom profile picture JPEG encoded as Base64." },
+        "bannerBase64": { "type": "string", "description": "Compressed custom profile banner JPEG encoded as Base64." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of profile creation (client writes FieldValue.serverTimestamp())." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last save (client writes FieldValue.serverTimestamp())." }
       },
@@ -53,7 +59,7 @@
     },
     "LeaderboardEntry": {
       "title": "LeaderboardEntry",
-      "description": "Public non-PII global leaderboard showcase entry for a feline enthusiast.",
+      "description": "Public non-PII global leaderboard showcase entry and interactive profile card.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
@@ -65,6 +71,14 @@
         "totalPurrsEarned": { "type": "integer", "description": "Total lifetime purrs used for global ranking." },
         "totalPets": { "type": "integer", "description": "Total lifetime pets." },
         "badgesCount": { "type": "integer", "description": "Number of unlocked achievement badges." },
+        "statsPublic": { "type": "boolean", "description": "Whether public stats are visible in profile popup." },
+        "bio": { "type": "string", "description": "Short player profile bio." },
+        "avatarBase64": { "type": "string", "description": "Compressed custom profile picture JPEG encoded as Base64." },
+        "bannerBase64": { "type": "string", "description": "Compressed custom profile banner JPEG encoded as Base64." },
+        "publicRebirths": { "type": "integer", "description": "Rebirth count shared if statsPublic is true." },
+        "publicAscensions": { "type": "integer", "description": "Gato Ascension count shared if statsPublic is true." },
+        "publicDailyStreak": { "type": "integer", "description": "Current daily streak shared if statsPublic is true." },
+        "publicHighestComboX100": { "type": "integer", "description": "Highest combo multiplier scaled by 100." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last leaderboard sync." }
       },
       "required": [
@@ -79,6 +93,47 @@
         "badgesCount",
         "updatedAt"
       ]
+    },
+    "ModerationRecord": {
+      "title": "ModerationRecord",
+      "description": "Admin-managed player moderation state supporting warnings, timeouts, and bans.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target Firebase Auth UID." },
+        "status": { "type": "string", "enum": ["ACTIVE", "WARNED", "TIMED_OUT", "BANNED"], "description": "Moderation enforcement state." },
+        "reason": { "type": "string", "description": "Warning, timeout, or ban message shown to the player." },
+        "timeoutUntilMillis": { "type": "integer", "description": "UTC epoch millis when a timeout expires." },
+        "warningCount": { "type": "integer", "description": "Total warnings issued to this account." },
+        "updatedByEmail": { "type": "string", "description": "Verified admin email that issued the moderation action." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of moderation update." }
+      },
+      "required": ["userId", "status", "reason", "timeoutUntilMillis", "warningCount", "updatedByEmail", "updatedAt"]
+    },
+    "GlobalAnnouncement": {
+      "title": "GlobalAnnouncement",
+      "description": "Global sanctuary broadcast message authored exclusively by the verified admin.",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string", "description": "Unique announcement document ID." },
+        "title": { "type": "string", "description": "Short headline shown on broadcast banner." },
+        "body": { "type": "string", "description": "Full global message text." },
+        "severity": { "type": "string", "enum": ["INFO", "EVENT", "WARNING"], "description": "Visual style category for the announcement." },
+        "senderEmail": { "type": "string", "description": "Verified admin email." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of broadcast creation." }
+      },
+      "required": ["messageId", "title", "body", "severity", "senderEmail", "createdAt"]
+    },
+    "LimitedItemCounter": {
+      "title": "LimitedItemCounter",
+      "description": "Global Exist Counter tracking how many limited-time items exist across caretakers.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string", "description": "Prefixed limited-time item ID (pat_*, acc_*, thm_*, or bg_*)." },
+        "itemType": { "type": "string", "enum": ["PATTERN", "ACCESSORY", "THEME", "BACKGROUND"], "description": "Limited-time item category." },
+        "existCount": { "type": "integer", "description": "Total number of this limited-time item unlocked worldwide." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of latest unlock increment." }
+      },
+      "required": ["itemId", "itemType", "existCount", "updatedAt"]
     }
   },
   "firestore": {
@@ -88,7 +143,19 @@
     },
     "/leaderboard/{userId}": {
       "schema": { "$ref": "#/entities/LeaderboardEntry" },
-      "description": "Public non-PII global leaderboard entries."
+      "description": "Public non-PII global leaderboard entries with clickable profile cards."
+    },
+    "/moderation/{userId}": {
+      "schema": { "$ref": "#/entities/ModerationRecord" },
+      "description": "Per-user moderation state written by the admin and readable only by the target owner or admin."
+    },
+    "/global_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/GlobalAnnouncement" },
+      "description": "Global broadcast messages sent by the admin and displayed to signed-in players."
+    },
+    "/limited_item_stats/{itemId}": {
+      "schema": { "$ref": "#/entities/LimitedItemCounter" },
+      "description": "Global Exist Counters incremented atomically whenever a limited-time item is unlocked."
     }
   }
 }

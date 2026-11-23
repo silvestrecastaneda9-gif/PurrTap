@@ -217,6 +217,63 @@ private fun paletteForPattern(patternId: String): CatPalette {
         outline = Color(0xFF0E1838),
         isCosmic = true,
       )
+    "pumpkin_pie_tabby" ->
+      CatPalette(
+        bodyMain = Color(0xFFEA7C24),
+        bodySecondary = Color(0xFFFFF4E0),
+        stripeOrPatch = Color(0xFF9C3D0C),
+        earInner = Color(0xFFFFBC8A),
+        cheek = Color(0xFFFF906E),
+        nose = Color(0xFFB8421B),
+        eye = Color(0xFF3E2411),
+        outline = Color(0xFF4F1D06),
+      )
+    "cranberry_calico" ->
+      CatPalette(
+        bodyMain = Color(0xFFFFF5EA),
+        bodySecondary = Color(0xFF9E1F38),
+        stripeOrPatch = Color(0xFFD68C22),
+        earInner = Color(0xFFF699AA),
+        cheek = Color(0xFFFF758F),
+        nose = Color(0xFF9B2242),
+        eye = Color(0xFF2B5B3F),
+        outline = Color(0xFF42101F),
+      )
+    "pilgrim_pheasant" ->
+      CatPalette(
+        bodyMain = Color(0xFFA6602A),
+        bodySecondary = Color(0xFFFAD390),
+        stripeOrPatch = Color(0xFF8A1C1C),
+        earInner = Color(0xFFE5A27B),
+        cheek = Color(0xFFFF8C69),
+        nose = Color(0xFF6B2D16),
+        eye = Color(0xFFFFC107),
+        outline = Color(0xFF3B1A08),
+      )
+    "roasted_crown_calico" ->
+      CatPalette(
+        bodyMain = Color(0xFFFFF4E4),
+        bodySecondary = Color(0xFF8C3B14),
+        stripeOrPatch = Color(0xFFE5A823),
+        earInner = Color(0xFFF7AE9E),
+        cheek = Color(0xFFFF8F85),
+        nose = Color(0xFFA6402B),
+        eye = Color(0xFF2E6B4E),
+        outline = Color(0xFF3E1806),
+        isCosmic = true,
+      )
+    "velvet_gravy_tabby" ->
+      CatPalette(
+        bodyMain = Color(0xFFB55A16),
+        bodySecondary = Color(0xFFFFE59E),
+        stripeOrPatch = Color(0xFFFFC436),
+        earInner = Color(0xFFF2A47E),
+        cheek = Color(0xFFFF906E),
+        nose = Color(0xFF7D2E0C),
+        eye = Color(0xFF40E0D0),
+        outline = Color(0xFF381604),
+        isCosmic = true,
+      )
     else -> // "tabby"
       CatPalette(
         bodyMain = Color(0xFFF49A48),
@@ -801,6 +858,25 @@ private fun DrawScope.drawCatCharacter(
         drawCircle(color = Color.White, radius = 4f, center = Offset(cx - bodyW * 0.18f, bodyTop + bodyH * 0.38f))
         drawCircle(color = Color.White, radius = 3f, center = Offset(cx + bodyW * 0.20f, bodyTop + bodyH * 0.55f))
       }
+      "pumpkin_pie_tabby", "pilgrim_pheasant", "velvet_gravy_tabby" -> {
+        drawOval(
+          color = palette.bodySecondary,
+          topLeft = Offset(cx - bodyW * 0.26f, bodyTop + bodyH * 0.16f),
+          size = Size(bodyW * 0.52f, bodyH * 0.64f),
+        )
+      }
+      "cranberry_calico", "roasted_crown_calico" -> {
+        drawCircle(
+          color = palette.bodySecondary,
+          radius = bodyW * 0.21f,
+          center = Offset(cx - bodyW * 0.24f, bodyTop + bodyH * 0.40f),
+        )
+        drawCircle(
+          color = palette.stripeOrPatch,
+          radius = bodyW * 0.18f,
+          center = Offset(cx + bodyW * 0.22f, bodyTop + bodyH * 0.56f),
+        )
+      }
     }
 
     drawRoundRect(
@@ -940,7 +1016,7 @@ private fun DrawScope.drawCatCharacter(
         center = Offset(cx + headRadius * 0.46f, headCenterY - headRadius * 0.46f),
       )
     }
-    "golden_taiyaki", "cinnamon_swirl", "aurora_tabby", "november_maple_tabby", "golden_touch_cat" -> {
+    "golden_taiyaki", "cinnamon_swirl", "aurora_tabby", "november_maple_tabby", "golden_touch_cat", "pumpkin_pie_tabby", "pilgrim_pheasant", "velvet_gravy_tabby" -> {
       for (i in -1..1) {
         val x = cx + i * headRadius * 0.22f
         drawLine(
@@ -951,6 +1027,18 @@ private fun DrawScope.drawCatCharacter(
           cap = StrokeCap.Round,
         )
       }
+    }
+    "cranberry_calico", "roasted_crown_calico" -> {
+      drawCircle(
+        color = palette.bodySecondary,
+        radius = headRadius * 0.34f,
+        center = Offset(cx - headRadius * 0.48f, headCenterY - headRadius * 0.40f),
+      )
+      drawCircle(
+        color = palette.stripeOrPatch,
+        radius = headRadius * 0.22f,
+        center = Offset(cx + headRadius * 0.48f, headCenterY - headRadius * 0.44f),
+      )
     }
     "solar_sphinx" -> {
       drawCircle(
@@ -1351,6 +1439,120 @@ private fun DrawScope.drawCatCharacter(
       drawPath(diamondPath, color = Color(0xFF00838F), style = Stroke(width = strokeW * 0.6f))
       drawCircle(color = Color.White, radius = headRadius * 0.055f, center = Offset(cx - headRadius * 0.34f, baseY - headRadius * 0.16f))
       drawCircle(color = Color.White, radius = headRadius * 0.055f, center = Offset(cx + headRadius * 0.34f, baseY - headRadius * 0.16f))
+    }
+    "pilgrim_hat" -> {
+      val brimY = headCenterY - headRadius * 0.82f
+      drawRoundRect(
+        color = Color(0xFF282422),
+        topLeft = Offset(cx - headRadius * 0.82f, brimY - headRadius * 0.10f),
+        size = Size(headRadius * 1.64f, headRadius * 0.22f),
+        cornerRadius = CornerRadius(headRadius * 0.10f, headRadius * 0.10f),
+      )
+      drawRoundRect(
+        color = Color(0xFF3E3834),
+        topLeft = Offset(cx - headRadius * 0.48f, brimY - headRadius * 0.72f),
+        size = Size(headRadius * 0.96f, headRadius * 0.68f),
+        cornerRadius = CornerRadius(headRadius * 0.10f, headRadius * 0.10f),
+      )
+      drawRect(
+        color = Color(0xFFFFC107),
+        topLeft = Offset(cx - headRadius * 0.18f, brimY - headRadius * 0.26f),
+        size = Size(headRadius * 0.36f, headRadius * 0.22f),
+        style = Stroke(width = strokeW),
+      )
+    }
+    "cranberry_scarf" -> {
+      drawRoundRect(
+        color = Color(0xFF9B1B30),
+        topLeft = Offset(cx - headRadius * 0.76f, neckY - headRadius * 0.08f),
+        size = Size(headRadius * 1.52f, headRadius * 0.28f),
+        cornerRadius = CornerRadius(headRadius * 0.14f, headRadius * 0.14f),
+      )
+      drawRoundRect(
+        color = Color(0xFFE65100),
+        topLeft = Offset(cx + headRadius * 0.16f, neckY + headRadius * 0.06f),
+        size = Size(headRadius * 0.32f, headRadius * 0.62f),
+        cornerRadius = CornerRadius(headRadius * 0.10f, headRadius * 0.10f),
+      )
+      drawCircle(color = Color(0xFFFFD54F), radius = headRadius * 0.12f, center = Offset(cx - headRadius * 0.18f, neckY + headRadius * 0.06f))
+    }
+    "turkey_plush" -> {
+      val tx = cx + headRadius * 0.88f
+      val ty = neckY + headRadius * 0.04f
+      drawCircle(color = Color(0xFFC62828), radius = headRadius * 0.24f, center = Offset(tx + headRadius * 0.08f, ty - headRadius * 0.08f))
+      drawOval(
+        color = Color(0xFF8D4E24),
+        topLeft = Offset(tx - headRadius * 0.26f, ty - headRadius * 0.18f),
+        size = Size(headRadius * 0.52f, headRadius * 0.36f),
+      )
+      drawCircle(color = Color(0xFFA95C29), radius = headRadius * 0.14f, center = Offset(tx - headRadius * 0.20f, ty - headRadius * 0.16f))
+      drawCircle(color = Color(0xFFFFCA28), radius = headRadius * 0.06f, center = Offset(tx - headRadius * 0.34f, ty - headRadius * 0.16f))
+    }
+    "cornucopia_horn" -> {
+      val hx = cx - headRadius * 1.05f
+      val hy = neckY + headRadius * 0.02f
+      val hornPath =
+        Path().apply {
+          moveTo(hx - headRadius * 0.22f, hy - headRadius * 0.22f)
+          lineTo(hx + headRadius * 0.26f, hy + headRadius * 0.10f)
+          lineTo(hx - headRadius * 0.14f, hy + headRadius * 0.28f)
+          close()
+        }
+      drawPath(hornPath, color = Color(0xFFD68910))
+      drawPath(hornPath, color = palette.outline, style = Stroke(width = strokeW * 0.8f, join = StrokeJoin.Round))
+      drawCircle(color = Color(0xFFC62828), radius = headRadius * 0.10f, center = Offset(hx + headRadius * 0.22f, hy + headRadius * 0.04f))
+      drawCircle(color = Color(0xFFFFCA28), radius = headRadius * 0.09f, center = Offset(hx + headRadius * 0.30f, hy + headRadius * 0.14f))
+      drawCircle(color = Color(0xFF43A047), radius = headRadius * 0.08f, center = Offset(hx + headRadius * 0.16f, hy + headRadius * 0.18f))
+    }
+    "gravy_ladle" -> {
+      val sx = cx + headRadius * 0.96f
+      val sy = neckY - headRadius * 0.10f
+      drawLine(
+        color = Color(0xFFFFCA28),
+        start = Offset(sx - headRadius * 0.14f, sy + headRadius * 0.42f),
+        end = Offset(sx + headRadius * 0.16f, sy - headRadius * 0.34f),
+        strokeWidth = strokeW * 1.6f,
+        cap = StrokeCap.Round,
+      )
+      drawCircle(
+        color = Color(0xFFFFB300),
+        radius = headRadius * 0.22f,
+        center = Offset(sx - headRadius * 0.16f, sy + headRadius * 0.42f),
+      )
+      drawCircle(
+        color = Color(0xFFD84315),
+        radius = headRadius * 0.12f,
+        center = Offset(sx - headRadius * 0.16f, sy + headRadius * 0.42f),
+      )
+      drawCircle(
+        color = Color.White,
+        radius = headRadius * 0.07f,
+        center = Offset(sx + headRadius * 0.16f, sy - headRadius * 0.36f),
+      )
+    }
+    "melted_solstice_crown" -> {
+      val baseY = headCenterY - headRadius * 0.80f
+      val frostCrown =
+        Path().apply {
+          moveTo(cx - headRadius * 0.50f, baseY)
+          lineTo(cx - headRadius * 0.56f, baseY - headRadius * 0.48f)
+          lineTo(cx - headRadius * 0.25f, baseY - headRadius * 0.22f)
+          lineTo(cx, baseY - headRadius * 0.66f)
+          lineTo(cx + headRadius * 0.25f, baseY - headRadius * 0.22f)
+          lineTo(cx + headRadius * 0.56f, baseY - headRadius * 0.48f)
+          lineTo(cx + headRadius * 0.50f, baseY)
+          close()
+        }
+      drawPath(frostCrown, color = Color(0xFFB3E5FC))
+      drawPath(frostCrown, color = Color(0xFF0288D1), style = Stroke(width = strokeW, join = StrokeJoin.Round))
+      // Festive crimson solstice berry gem in center + frost highlights + melting droplet
+      drawCircle(color = Color(0xFFE53935), radius = headRadius * 0.09f, center = Offset(cx, baseY - headRadius * 0.20f))
+      drawCircle(color = Color.White, radius = headRadius * 0.055f, center = Offset(cx - headRadius * 0.28f, baseY - headRadius * 0.14f))
+      drawOval(
+        color = Color(0xFF4FC3F7),
+        topLeft = Offset(cx + headRadius * 0.46f, baseY - headRadius * 0.12f),
+        size = Size(headRadius * 0.13f, headRadius * 0.22f),
+      )
     }
   }
 }

@@ -9,21 +9,30 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.CatSoundEffect
 import com.example.audio.CustomMusicTrack
+import com.example.audio.MusicPlaybackStatus
 import com.example.audio.MusicTrack
+import com.example.audio.RepeatMode
 import com.example.audio.SoundManager
 import com.example.data.local.AppSettingsState
 import com.example.data.local.LocalGameStorage
 import com.example.data.model.ActiveBattlePassQuest
+import com.example.data.model.ActiveFestivalQuest
 import com.example.data.model.BattlePassRewardItem
 import com.example.data.model.BattlePassState
 import com.example.data.model.ChallengeProgressState
 import com.example.data.model.DailyBonusPrizeType
 import com.example.data.model.EndlessDailyPayout
+import com.example.data.model.FestivalTier
+import com.example.data.model.BlogPostDef
 import com.example.data.model.GameCatalog
+import com.example.data.model.GlobalAnnouncement
 import com.example.data.model.LeaderboardEntry
+import com.example.data.model.LeaderboardPublicStats
 import com.example.data.model.LimitedEventDef
+import com.example.data.model.ModerationRecord
 import com.example.data.model.MoonlightEventState
 import com.example.data.model.MoonlightPhase
+import com.example.data.model.NavigationLayoutFormat
 import com.example.data.model.OfflineEarningsReport
 import com.example.data.model.PassRewardKind
 import com.example.data.model.PlayerStatsState
@@ -75,6 +84,14 @@ data class FloatingPurrParticle(
   val isGemDrop: Boolean = false,
 )
 
+data class SpawnedTurkey(
+  val id: Long,
+  val xFraction: Float,
+  val yFraction: Float,
+  val spawnedAtMillis: Long,
+  val isGoldenGobbler: Boolean = false,
+)
+
 data class PurrGameUiState(
   val isLoading: Boolean = true,
   val isSignedIn: Boolean = false,
@@ -85,6 +102,12 @@ data class PurrGameUiState(
   val challengeState: ChallengeProgressState = ChallengeProgressState(),
   val playerStats: PlayerStatsState = PlayerStatsState(),
   val activeEvent: LimitedEventDef = GameCatalog.periodicEvents.first(),
+  val festivalTier: FestivalTier = FestivalTier.REGULAR,
+  val festivalRerollCountdownText: String = "59m 59s",
+  val isTurkeyRushActive: Boolean = GameCatalog.isTurkeySpawnWindowActive(),
+  val turkeyRushCountdownText: String = GameCatalog.turkeyRushStatusText(),
+  val hourlyFestivalQuests: List<ActiveFestivalQuest> = emptyList(),
+  val spawnedTurkeys: List<SpawnedTurkey> = emptyList(),
   val eventCountdownText: String = "4d 23h",
   val weeklyResetCountdownText: String = "6d 23h",
   val moonlightState: MoonlightEventState = MoonlightEventState(),
@@ -122,6 +145,19 @@ data class PurrGameUiState(
   val vaultKeeperTapCount: Int = 0,
   val vaultCooldownRemainingMillis: Long = 0L,
   val vaultCooldownText: String = "",
+  val showDogCrashOmen: Boolean = false,
+  val showTrillionCutscene: Boolean = false,
+  val activeFeastZoneId: String? = null,
+  val showBossGlitchCutscene: Boolean = false,
+  val showWindowGatoDesktop: Boolean = false,
+  val showWindowGatoExitConfrontation: Boolean = false,
+  val isAdmin: Boolean = false,
+  val activeModeration: ModerationRecord? = null,
+  val adminModerationList: List<ModerationRecord> = emptyList(),
+  val globalAnnouncements: List<GlobalAnnouncement> = emptyList(),
+  val dismissedAnnouncementId: String = "",
+  val limitedExistCounts: Map<String, Long> = emptyMap(),
+  val pendingUpdateBlogPost: BlogPostDef? = null,
   val particles: List<FloatingPurrParticle> = emptyList(),
 ) {
   val activeCurrencyBalance: Long
@@ -140,6 +176,25 @@ data class PurrGameUiState(
 
   val canAscend: Boolean
     get() = challengeState.rebirthCount >= GameCatalog.ASCENSION_REQUIRED_REBIRTHS
+
+  val isBanned: Boolean
+    get() = activeModeration?.status == "BANNED"
+
+  val isTimedOut: Boolean
+    get() =
+      activeModeration?.status == "TIMED_OUT" &&
+        activeModeration.timeoutUntilMillis > System.currentTimeMillis()
+
+  val activeAnnouncementBanner: GlobalAnnouncement?
+    get() =
+      globalAnnouncements.firstOrNull {
+        it.messageId.isNotBlank() && it.messageId != dismissedAnnouncementId
+      }
+
+  fun existCountFor(itemType: String, itemId: String): Long {
+    val statId = GameCatalog.existStatId(itemType, itemId)
+    return limitedExistCounts[statId] ?: 0L
+  }
 }
 
 class PurrGameViewModel(
@@ -149,16 +204,21 @@ class PurrGameViewModel(
   private val soundManager: SoundManager,
   private val currentUserId: String?,
   private val initialDisplayName: String,
+  private val currentUserEmail: String? = null,
+  private val onSyncWidgets: () -> Unit = {},
 ) : ViewModel() {
 
   private val _uiState =
     MutableStateFlow(
       PurrGameUiState(
         isSignedIn = currentUserId != null,
+        isAdmin = GameCatalog.isAdminEmail(currentUserEmail),
         weather = weatherRepository.rollRandomWeather(previous = null, shiftCount = 1L),
       )
     )
   val uiState: StateFlow<PurrGameUiState> = _uiState.asStateFlow()
+
+  val musicPlaybackStatus: StateFlow<MusicPlaybackStatus> = soundManager.playbackStatus
 
   private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
   val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
@@ -193,6 +253,7 @@ class PurrGameViewModel(
     }
 
   private var isDirty = false
+  private var isCloudSaveInFlight = false
   private var challengeDirty = false
   private var statsDirty = false
   private var passDirty = false
@@ -203,11 +264,26 @@ class PurrGameViewModel(
   private var rolledNightEpochDay: Long = -1L
   private var isBloodmoonTonight: Boolean = false
   private var secondsUntilNextWeather: Int = WeatherRepository.WEATHER_INTERVAL_SECONDS
+  private var turkeySpawnSeconds: Int = 0
+  private var turkeyIdCounter: Long = 0L
+
+  private var remoteExistCounts: Map<String, Long> = emptyMap()
 
   init {
+    soundManager.setPlaybackCallbacks(
+      onTrackEnded = { handleTrackNaturallyEnded() },
+      onSleepTimerExpired = {
+        updateSettings { it.copy(isMusicPlaying = false) }
+        _toastEvents.tryEmit("Sleep timer ended — Sanctuary music paused.")
+      },
+    )
     bootstrapPlayer()
     startGameTicker()
     observeGlobalRank()
+    observeGlobalAnnouncements()
+    observeLimitedItemStats()
+    observeOwnModeration()
+    observeAdminModerationIfAuthorized()
   }
 
   private fun observeGlobalRank() {
@@ -223,13 +299,80 @@ class PurrGameViewModel(
     }
   }
 
+  private fun observeGlobalAnnouncements() {
+    val repo = repository ?: return
+    if (currentUserId == null) return
+    viewModelScope.launch {
+      repo.observeGlobalAnnouncements(10L)
+        .catch { e ->
+          if (e is CancellationException) throw e
+          Log.w(TAG, "Error observing global announcements: ${e.message}")
+        }
+        .collect { list ->
+          _uiState.update { it.copy(globalAnnouncements = list) }
+        }
+    }
+  }
+
+  private fun observeLimitedItemStats() {
+    val repo = repository ?: return
+    if (currentUserId == null) return
+    viewModelScope.launch {
+      repo.observeLimitedItemCounters(120L)
+        .catch { e ->
+          if (e is CancellationException) throw e
+          Log.w(TAG, "Error observing limited item counters: ${e.message}")
+        }
+        .collect { counts ->
+          remoteExistCounts = counts
+          _uiState.update { state ->
+            state.copy(limitedExistCounts = mergeExistMaps(state.limitedExistCounts, counts))
+          }
+        }
+    }
+  }
+
+  private fun observeOwnModeration() {
+    val repo = repository ?: return
+    val uid = currentUserId ?: return
+    viewModelScope.launch {
+      repo.observeOwnModeration(uid)
+        .catch { e ->
+          if (e is CancellationException) throw e
+          Log.w(TAG, "Error observing own moderation: ${e.message}")
+        }
+        .collect { mod ->
+          _uiState.update { it.copy(activeModeration = mod) }
+        }
+    }
+  }
+
+  private fun observeAdminModerationIfAuthorized() {
+    val repo = repository ?: return
+    if (currentUserId == null || !GameCatalog.isAdminEmail(currentUserEmail)) return
+    viewModelScope.launch {
+      repo.observeAllModerationForAdmin(100L)
+        .catch { e ->
+          if (e is CancellationException) throw e
+          Log.w(TAG, "Error observing admin moderation list: ${e.message}")
+        }
+        .collect { records ->
+          _uiState.update { it.copy(adminModerationList = records) }
+        }
+    }
+  }
+
   private fun bootstrapPlayer() {
     viewModelScope.launch {
       try {
         val now = System.currentTimeMillis()
         val loadedSettings = localStorage.loadSettings()
         applySettingsToAudio(loadedSettings)
-        val loadedChallenge = localStorage.loadChallengeProgress()
+        val rawChallenge = localStorage.loadChallengeProgress()
+        val (loadedChallenge, festChanged, _) = ensureHourlyFestivalAndQuests(rawChallenge, now)
+        if (festChanged) {
+          localStorage.saveChallengeProgress(loadedChallenge)
+        }
         val loadedStats = localStorage.loadPlayerStats(now)
         val loadedPass = localStorage.loadBattlePassState()
         val (syncedPass, passChanged) = ensureHourlyPassQuests(loadedPass, now)
@@ -240,10 +383,38 @@ class PurrGameViewModel(
         val passTier = GameCatalog.freeTierFromXp(syncedPass.passXp)
         val vipTier = GameCatalog.vipTierFromXp(syncedPass.passXp)
         val evaluatedQuests = GameCatalog.evaluateHourlyPassQuests(syncedPass)
+        val initialFestTier = GameCatalog.festivalTierFor(loadedChallenge.festivalIsMega)
+        val evaluatedFestQuests = GameCatalog.evaluateHourlyFestivalQuests(loadedChallenge)
+        val localExist = localStorage.loadLimitedExistCounts().toMutableMap()
+        val dismissedId = localStorage.loadDismissedAnnouncementId()
+        val lastSeenBlogVersion = localStorage.loadLastSeenBlogVersion()
+        val latestBlogPost = GameCatalog.blogPosts.firstOrNull()
+        val pendingBlog =
+          if (latestBlogPost != null && lastSeenBlogVersion != latestBlogPost.version) {
+            latestBlogPost
+          } else {
+            null
+          }
+        val localProfile = localStorage.loadProfile()
+        ensureOwnedLimitedFloor(
+          counts = localExist,
+          patterns = localProfile.unlockedPatterns,
+          accessories = localProfile.unlockedAccessories,
+          themes = loadedSettings.unlockedColorThemes,
+          backgrounds = localProfile.unlockedBackgrounds,
+        )
+        localStorage.saveLimitedExistCounts(localExist)
+
         _uiState.update {
           it.copy(
             settings = loadedSettings,
+            pendingUpdateBlogPost = pendingBlog,
             challengeState = loadedChallenge,
+            festivalTier = initialFestTier,
+            festivalRerollCountdownText = formatDuration(GameCatalog.millisUntilNextEpochHour(now)),
+            isTurkeyRushActive = GameCatalog.isTurkeySpawnWindowActive(now),
+            turkeyRushCountdownText = GameCatalog.turkeyRushStatusText(now),
+            hourlyFestivalQuests = evaluatedFestQuests,
             playerStats = loadedStats,
             battlePassState = syncedPass,
             currentPassTier = passTier,
@@ -276,6 +447,8 @@ class PurrGameViewModel(
               (loadedChallenge.vaultKickoutUntilMillis - now).coerceAtLeast(0L),
             vaultCooldownText =
               formatDuration((loadedChallenge.vaultKickoutUntilMillis - now).coerceAtLeast(0L)),
+            dismissedAnnouncementId = dismissedId,
+            limitedExistCounts = mergeExistMaps(localExist, remoteExistCounts),
           )
         }
 
@@ -284,14 +457,32 @@ class PurrGameViewModel(
         isBloodmoonTonight = roll.isBloodmoon
         ensureNightRollForCurrentTime(now)
 
-        val localProfile = localStorage.loadProfile()
-
         if (repository != null && currentUserId != null) {
           val remote = repository.ensureUserProfile(currentUserId, initialDisplayName)
           val merged = mergeLocalAndRemote(localProfile, remote, currentUserId, initialDisplayName)
           localStorage.saveProfile(merged)
+          val mergedExist = localExist.toMutableMap()
+          ensureOwnedLimitedFloor(
+            counts = mergedExist,
+            patterns = merged.unlockedPatterns,
+            accessories = merged.unlockedAccessories,
+            themes = loadedSettings.unlockedColorThemes,
+            backgrounds = merged.unlockedBackgrounds,
+          )
+          localStorage.saveLimitedExistCounts(mergedExist)
+          _uiState.update { s ->
+            s.copy(limitedExistCounts = mergeExistMaps(mergedExist, remoteExistCounts))
+          }
           if (merged != remote) {
-            repository.saveProfileAndLeaderboard(merged)
+            val pubStats =
+              LeaderboardPublicStats(
+                rebirths = loadedChallenge.rebirthCount,
+                ascensions = loadedChallenge.ascensionCount,
+                dailyStreak = merged.dailyStreak,
+                highestComboX100 =
+                  (loadedStats.highestComboMultiplier * 100.0).roundToLong().coerceAtLeast(100L),
+              )
+            repository.saveProfileAndLeaderboard(merged, pubStats)
           }
           applyProfile(merged, isLoaded = true)
           hasInitializedProfile = true
@@ -309,7 +500,7 @@ class PurrGameViewModel(
               Log.w(TAG, "Profile listener error", firestoreError ?: error)
             }
             .collect { remoteUpdate ->
-              if (remoteUpdate != null && !isDirty) {
+              if (remoteUpdate != null && !isDirty && !isCloudSaveInFlight) {
                 val current = _uiState.value.profile
                 if (
                   remoteUpdate.totalPurrsEarned >= current.totalPurrsEarned &&
@@ -345,6 +536,7 @@ class PurrGameViewModel(
       var ticksSinceSave = 0
       while (true) {
         delay(1000L)
+        try {
         val now = System.currentTimeMillis()
         val (event, remainingMillis) = GameCatalog.currentPeriodicEvent(now)
         val countdown = formatDuration(remainingMillis)
@@ -355,6 +547,30 @@ class PurrGameViewModel(
         val shouldRollWeather = secondsUntilNextWeather <= 0
         if (shouldRollWeather) {
           secondsUntilNextWeather = WeatherRepository.WEATHER_INTERVAL_SECONDS
+        }
+
+        val turkeyWindowOpen = GameCatalog.isTurkeySpawnWindowActive(now)
+        turkeySpawnSeconds++
+        var newSpawnedTurkey: SpawnedTurkey? = null
+        if (turkeySpawnSeconds >= GameCatalog.FESTIVAL_SPAWN_INTERVAL_SECONDS) {
+          turkeySpawnSeconds = 0
+          val snap = _uiState.value
+          val curTier = GameCatalog.festivalTierFor(snap.challengeState.festivalIsMega)
+          if (
+            turkeyWindowOpen &&
+              !snap.isLoading &&
+              isAppInForeground &&
+              GameCatalog.shouldSpawnTurkey(curTier)
+          ) {
+            newSpawnedTurkey =
+              SpawnedTurkey(
+                id = ++turkeyIdCounter,
+                xFraction = 0.14f + Random.nextFloat() * 0.70f,
+                yFraction = 0.20f + Random.nextFloat() * 0.58f,
+                spawnedAtMillis = now,
+                isGoldenGobbler = GameCatalog.shouldSpawnGoldenGobbler(curTier),
+              )
+          }
         }
 
         _uiState.update { state ->
@@ -384,9 +600,30 @@ class PurrGameViewModel(
               state.profile
             }
 
+          val (festChallenge, festChanged, festHourRerolled) =
+            ensureHourlyFestivalAndQuests(state.challengeState, now)
+          if (festChanged) {
+            challengeDirty = true
+          }
+          val festTier = GameCatalog.festivalTierFor(festChallenge.festivalIsMega)
+          if (festHourRerolled && !state.isLoading) {
+            turkeySpawnSeconds = GameCatalog.FESTIVAL_SPAWN_INTERVAL_SECONDS - 2
+            _toastEvents.tryEmit(
+              if (festTier == FestivalTier.MEGA) {
+                "🔥 MEGA GRAVY RUSH! 3.0x Purrs, 45% Turkeys & +3 Golden Gobblers spawning for 5m!"
+              } else {
+                "🦃 Thanksgiving Part 2 Reroll: Turkeys & +3 Gobblers spawning for 5m (${festTier.turkeySpawnChancePercent}%/10s)!"
+              }
+            )
+          }
+
           val currentChallenge =
             let {
-              var next = state.challengeState
+              var next = festChallenge
+              if (!state.isLoading && shouldRollWeather) {
+                challengeDirty = true
+                next = next.copy(festHourWeatherShifts = next.festHourWeatherShifts + 1L)
+              }
               if (!state.isLoading && isAppInForeground && next.gemFrenzyRemainingMillis > 0L) {
                 challengeDirty = true
                 val left = (next.gemFrenzyRemainingMillis - 1000L).coerceAtLeast(0L)
@@ -409,9 +646,11 @@ class PurrGameViewModel(
           }
           if (!state.isLoading && shouldRollWeather) {
             passDirty = true
+            val weatherXp =
+              if ("asc_pass_scholar" in currentChallenge.unlockedAscensionIds) 23L else 15L
             nextPass =
               nextPass.copy(
-                passXp = nextPass.passXp + 15L,
+                passXp = nextPass.passXp + weatherXp,
                 hourWeatherShifts = nextPass.hourWeatherShifts + 1L,
               )
           }
@@ -448,6 +687,7 @@ class PurrGameViewModel(
               moonlight.phase,
               currentChallenge,
               isGoldenRainNow,
+              festTier,
             )
           val updatedProfile =
             if (!state.isLoading && pps > 0L) {
@@ -482,13 +722,13 @@ class PurrGameViewModel(
               next
             }
 
-          val baseDecay = if (updatedChallenge.isHardcoreMode) 0.32f else 0.16f
+          val baseDecay = if (updatedChallenge.isHardcoreMode) 0.36f else 0.22f
           val decayRate =
             if ("asc_frenzy_aura" in updatedChallenge.unlockedAscensionIds) baseDecay * 0.5f
             else baseDecay
           val decayedCombo = (state.comboCharge - decayRate).coerceAtLeast(0f)
           val maxComboScale =
-            if ("asc_frenzy_aura" in updatedChallenge.unlockedAscensionIds) 2.0 else 1.0
+            if ("asc_frenzy_aura" in updatedChallenge.unlockedAscensionIds) 1.10 else 0.60
           val comboMult = 1.0 + (decayedCombo * maxComboScale)
           val clickPow =
             computeEffectiveClick(
@@ -499,6 +739,7 @@ class PurrGameViewModel(
               comboMult,
               updatedChallenge,
               isGoldenRainNow,
+              festTier,
             )
           val epochDay = currentUtcEpochDay(now)
           val currentWeek = GameCatalog.currentEpochWeek(now)
@@ -517,15 +758,31 @@ class PurrGameViewModel(
               state.playerStats
             }
 
+          val activeTurkeys =
+            state.spawnedTurkeys.filter { (now - it.spawnedAtMillis) <= 18_000L }
+          val nextTurkeys =
+            if (newSpawnedTurkey != null && activeTurkeys.size < 4 && activeTurkeys.none { it.id == newSpawnedTurkey.id }) {
+              activeTurkeys + newSpawnedTurkey
+            } else {
+              activeTurkeys
+            }
+
           val nextStreakPreview = computeNextStreakNumber(updatedProfile, epochDay)
           val nextFreeTier = GameCatalog.freeTierFromXp(nextPass.passXp)
           val nextVipTier = GameCatalog.vipTierFromXp(nextPass.passXp)
           val nextQuests = GameCatalog.evaluateHourlyPassQuests(nextPass)
+          val nextFestQuests = GameCatalog.evaluateHourlyFestivalQuests(updatedChallenge)
 
           state.copy(
             profile = updatedProfile,
             weather = nextWeather,
             challengeState = updatedChallenge,
+            festivalTier = festTier,
+            festivalRerollCountdownText = formatDuration(GameCatalog.millisUntilNextEpochHour(now)),
+            isTurkeyRushActive = turkeyWindowOpen,
+            turkeyRushCountdownText = GameCatalog.turkeyRushStatusText(now),
+            hourlyFestivalQuests = nextFestQuests,
+            spawnedTurkeys = nextTurkeys,
             playerStats = nextStats,
             battlePassState = nextPass,
             currentPassTier = nextFreeTier,
@@ -576,6 +833,11 @@ class PurrGameViewModel(
         if (hasInitializedProfile) {
           checkWeeklyAutoRollover(now)
         }
+        } catch (e: CancellationException) {
+          throw e
+        } catch (_: Exception) {
+          // Keep 1-second tick loop alive so countdowns & Purr Frenzy decay never freeze
+        }
 
         ticksSinceSave++
         if (
@@ -597,6 +859,9 @@ class PurrGameViewModel(
             passDirty = false
             localStorage.saveBattlePassState(_uiState.value.battlePassState)
           }
+          val w = _uiState.value.weather
+          localStorage.saveWidgetWeatherSnapshot(w.condition.label, w.temperatureC.toInt())
+          onSyncWidgets()
         }
       }
     }
@@ -616,20 +881,18 @@ class PurrGameViewModel(
   fun onCatPetted(xFraction: Float, yFraction: Float) {
     val state = _uiState.value
     if (state.isLoading) return
+    if (enforceModerationBlock(state)) return
 
     val challenge = state.challengeState
-    val baseChargeGain = if (challenge.isHardcoreMode) 0.05f else 0.10f
-    val chargeGain =
-      if ("asc_frenzy_aura" in challenge.unlockedAscensionIds) baseChargeGain * 2f
-      else baseChargeGain
-    val newCombo = (state.comboCharge + chargeGain).coerceAtMost(1f)
-    val maxComboScale =
-      if ("asc_frenzy_aura" in challenge.unlockedAscensionIds) 2.0 else 1.0
-    val comboMult = 1.0 + (newCombo * maxComboScale)
+    val newCombo = 0f
+    val critChancePercent =
+      if ("asc_frenzy_aura" in challenge.unlockedAscensionIds) 20 else 12
+    val isCriticalPet = Random.nextInt(100) < critChancePercent
+    val comboMult = if (isCriticalPet) 2.5 else 1.0
 
     val luckyJackpot =
-      "asc_lucky_catnip" in challenge.unlockedAscensionIds && Random.nextInt(100) < 20
-    val isCrit = luckyJackpot || comboMult >= 1.65
+      "asc_lucky_catnip" in challenge.unlockedAscensionIds && Random.nextInt(100) < 12
+    val isCrit = luckyJackpot || isCriticalPet
     val rawClickGain =
       computeEffectiveClick(
         state.profile,
@@ -639,8 +902,9 @@ class PurrGameViewModel(
         comboMult,
         challenge,
         state.goldenRainActive,
+        state.festivalTier,
       )
-    val clickGain = if (luckyJackpot) rawClickGain * 5L else rawClickGain
+    val clickGain = if (luckyJackpot) (rawClickGain * 3.5).toLong() else rawClickGain
 
     soundManager.playCatTapSound(isComboCrit = isCrit)
 
@@ -650,12 +914,16 @@ class PurrGameViewModel(
         state.weather.condition == WeatherConditionKind.AURORA_BOREALIS ||
         state.weather.condition == WeatherConditionKind.METEOR_SHOWER
     val gemThreshold =
-      if (boostedSky) GameCatalog.GEM_DROP_RATE_BOOSTED_PER_1000
-      else GameCatalog.GEM_DROP_RATE_NORMAL_PER_1000
-    val foundGem = comboMult >= 1.25 && Random.nextInt(1000) < gemThreshold
+      GameCatalog.gemDropRatePer1000(boostedSky, challenge.unlockedAscensionIds)
+    val foundGem = isCrit && Random.nextInt(1000) < gemThreshold
 
     val particleId = ++particleCounter
-    val particlePrefix = if (luckyJackpot) "★ +" else "+"
+    val particlePrefix =
+      when {
+        luckyJackpot -> "★ +"
+        isCriticalPet -> "CRIT! +"
+        else -> "+"
+      }
     val particle =
       FloatingPurrParticle(
         id = particleId,
@@ -683,20 +951,34 @@ class PurrGameViewModel(
       _toastEvents.tryEmit("💎 RARE DROP! Found +1 Gem while petting!")
     }
 
+    val shouldTriggerDogOmen = !challenge.dogCrashOmenSeen && !state.showDogCrashOmen
+
+    val now = System.currentTimeMillis()
     isDirty = true
     statsDirty = true
     passDirty = true
-    if (challenge.isHardcoreMode || foundGem) challengeDirty = true
+    challengeDirty = true
+    var challengeToPersistImmediately: ChallengeProgressState? = null
     _uiState.update { s ->
+      val (syncedFestChallenge, _, _) = ensureHourlyFestivalAndQuests(s.challengeState, now)
       val nextChallenge =
-        s.challengeState.let { c ->
-          var updated =
-            if (c.isHardcoreMode) c.copy(hardcorePurrs = c.hardcorePurrs + clickGain) else c
+        syncedFestChallenge.let { c ->
+          var updated = c.copy(festHourPets = c.festHourPets + 1L)
+          if (shouldTriggerDogOmen) {
+            updated = updated.copy(dogCrashOmenSeen = true)
+          }
+          if (c.isHardcoreMode) {
+            updated = updated.copy(hardcorePurrs = c.hardcorePurrs + clickGain)
+          }
           if (foundGem) {
-            updated = updated.copy(gems = updated.gems + 1L, totalGemsEarned = updated.totalGemsEarned + 1L)
+            updated = updated.copy(gems = c.gems + 1L, totalGemsEarned = c.totalGemsEarned + 1L)
           }
           updated
         }
+      if (shouldTriggerDogOmen) {
+        challengeToPersistImmediately = nextChallenge
+      }
+      val festTier = GameCatalog.festivalTierFor(nextChallenge.festivalIsMega)
       val updatedProfile =
         s.profile.copy(
           purrs = if (nextChallenge.isHardcoreMode) s.profile.purrs else s.profile.purrs + clickGain,
@@ -709,10 +991,11 @@ class PurrGameViewModel(
           highestComboMultiplier = maxOf(s.playerStats.highestComboMultiplier, comboMult),
           biggestSingleTapPurrs = maxOf(s.playerStats.biggestSingleTapPurrs, clickGain),
         )
-      val (syncedPass, _) = ensureHourlyPassQuests(s.battlePassState, System.currentTimeMillis())
+      val (syncedPass, _) = ensureHourlyPassQuests(s.battlePassState, now)
+      val petPassXp = if ("asc_pass_scholar" in nextChallenge.unlockedAscensionIds) 3L else 2L
       val nextPass =
         syncedPass.copy(
-          passXp = syncedPass.passXp + 2L,
+          passXp = syncedPass.passXp + petPassXp,
           hourPets = syncedPass.hourPets + 1L,
           hourPurrsEarned = syncedPass.hourPurrsEarned + clickGain,
           hourComboCrits = syncedPass.hourComboCrits + (if (isCrit) 1L else 0L),
@@ -728,6 +1011,9 @@ class PurrGameViewModel(
       s.copy(
         profile = updatedProfile,
         challengeState = nextChallenge,
+        showDogCrashOmen = s.showDogCrashOmen || shouldTriggerDogOmen,
+        festivalTier = festTier,
+        hourlyFestivalQuests = GameCatalog.evaluateHourlyFestivalQuests(nextChallenge),
         playerStats = nextStats,
         battlePassState = nextPass,
         currentPassTier = nextFreeTier,
@@ -748,9 +1034,16 @@ class PurrGameViewModel(
             comboMult,
             nextChallenge,
             s.goldenRainActive,
+            festTier,
           ),
         particles = appended.takeLast(12),
       )
+    }
+
+    challengeToPersistImmediately?.let { persisted ->
+      viewModelScope.launch {
+        localStorage.saveChallengeProgress(persisted)
+      }
     }
 
     viewModelScope.launch {
@@ -764,9 +1057,165 @@ class PurrGameViewModel(
     }
   }
 
+  fun dismissDogCrashOmen() {
+    _uiState.update { it.copy(showDogCrashOmen = false) }
+  }
+
+  fun completeTrillionCutscene() {
+    val state = _uiState.value
+    val nextChallenge = state.challengeState.copy(trillionCutsceneSeen = true)
+    saveChallengeAndRefresh(nextChallenge)
+    val currentProfile = state.profile
+    val nextBadges = (currentProfile.unlockedBadgeIds + "royal_miga_decree").distinct()
+    val updatedProfile =
+      currentProfile.copy(
+        unlockedBadgeIds = nextBadges,
+        equippedBadgeId = currentProfile.equippedBadgeId.ifBlank { "royal_miga_decree" },
+      )
+    _uiState.update { it.copy(showTrillionCutscene = false) }
+    applyAndSaveImmediate(updatedProfile)
+    soundManager.playUiConfirm()
+    _toastEvents.tryEmit("👑 Royal Achievement Granted: Miga's Royal Decree!")
+  }
+
+  fun teleportToFeastZone(landmarkId: String) {
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    if (GameCatalog.part2MapLandmarks.none { it.id == landmarkId }) return
+    soundManager.playUiConfirm()
+    _uiState.update { it.copy(activeFeastZoneId = landmarkId) }
+  }
+
+  fun exitFeastZone() {
+    soundManager.playUiTap()
+    _uiState.update { it.copy(activeFeastZoneId = null) }
+  }
+
+  fun grantFeastZoneReward(
+    zoneTitle: String,
+    basePurrs: Long,
+    turkeys: Long,
+    passXp: Long,
+    bonusGems: Long = 0L,
+  ): Long {
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return 0L
+    val challenge = state.challengeState
+    val isHardcore = challenge.isHardcoreMode
+    val scaledPurrs =
+      maxOf(
+        basePurrs.coerceAtLeast(0L),
+        (state.effectivePps * 6L + state.effectiveClickPower * 16L).coerceAtMost(2_500_000_000L),
+      )
+    val safeTurkeys = turkeys.coerceAtLeast(0L)
+    val safeGems = bonusGems.coerceAtLeast(0L)
+    val nextChallenge =
+      challenge.copy(
+        hardcorePurrs =
+          if (isHardcore) challenge.hardcorePurrs + scaledPurrs else challenge.hardcorePurrs,
+        turkeys = challenge.turkeys + safeTurkeys,
+        totalTurkeysEarned = challenge.totalTurkeysEarned + safeTurkeys,
+        gems = challenge.gems + safeGems,
+        totalGemsEarned = challenge.totalGemsEarned + safeGems,
+      )
+    saveChallengeAndRefresh(nextChallenge)
+
+    val current = state.profile
+    val updatedProfile =
+      current.copy(
+        purrs = if (isHardcore) current.purrs else current.purrs + scaledPurrs,
+        totalPurrsEarned = current.totalPurrsEarned + scaledPurrs,
+        eventPurrsEarned = current.eventPurrsEarned + scaledPurrs,
+      )
+    applyAndSaveImmediate(updatedProfile)
+    if (passXp > 0L) {
+      grantPassXpImmediate(passXp)
+    }
+    soundManager.playUiConfirm()
+
+    val parts = buildList {
+      if (scaledPurrs > 0L) add("+${GameCatalog.formatCompactPurrs(scaledPurrs)} ${state.activeCurrencyShortLabel}")
+      if (safeTurkeys > 0L) add("+$safeTurkeys 🦃")
+      if (safeGems > 0L) add("+$safeGems 💎")
+    }
+    _toastEvents.tryEmit("$zoneTitle reward: ${parts.joinToString(" • ")}!")
+    return scaledPurrs
+  }
+
+  fun triggerBossGlitchCutscene() {
+    soundManager.playWindowGatoErrorBeep()
+    _uiState.update { it.copy(showBossGlitchCutscene = true) }
+  }
+
+  fun completeBossGlitchCutscene() {
+    val state = _uiState.value
+    val challenge = state.challengeState
+    val profile = state.profile
+    val rewardId = "melted_solstice_crown"
+    val firstTimeCrown = rewardId !in profile.unlockedAccessories
+    val turkeyGain = if (firstTimeCrown) 5L else 3L
+    val gemGain = if (firstTimeCrown) 1L else 0L
+    val bonusPurrs = maxOf(25_000L, (state.effectivePps * 12L + state.effectiveClickPower * 30L).coerceAtMost(5_000_000_000L))
+    val isHardcore = challenge.isHardcoreMode
+
+    val nextChallenge =
+      challenge.copy(
+        citadelBossGlitchSeen = true,
+        hardcorePurrs =
+          if (isHardcore) challenge.hardcorePurrs + bonusPurrs else challenge.hardcorePurrs,
+        turkeys = challenge.turkeys + turkeyGain,
+        totalTurkeysEarned = challenge.totalTurkeysEarned + turkeyGain,
+        gems = challenge.gems + gemGain,
+        totalGemsEarned = challenge.totalGemsEarned + gemGain,
+      )
+    saveChallengeAndRefresh(nextChallenge)
+
+    val updatedAccessories = (profile.unlockedAccessories + rewardId).distinct()
+    val updatedProfile =
+      profile.copy(
+        purrs = if (isHardcore) profile.purrs else profile.purrs + bonusPurrs,
+        totalPurrsEarned = profile.totalPurrsEarned + bonusPurrs,
+        eventPurrsEarned = profile.eventPurrsEarned + bonusPurrs,
+        unlockedAccessories = updatedAccessories,
+        selectedAccessoryId = rewardId,
+      )
+    _uiState.update {
+      it.copy(
+        showBossGlitchCutscene = false,
+        activeFeastZoneId = null,
+      )
+    }
+    applyAndSaveImmediate(updatedProfile)
+    if (firstTimeCrown) {
+      recordLimitedItemUnlock("ACCESSORY", rewardId)
+    }
+    grantPassXpImmediate(if (firstTimeCrown) 100L else 45L)
+    soundManager.playUiConfirm()
+    _toastEvents.tryEmit(
+      if (firstTimeCrown) {
+        "❄️ Claimed Limited-Time Reward: Melting Solstice Crown (+5 🦃 & +1 💎)!"
+      } else {
+        "❄️ Citadel Boss anomaly cleared again! +3 🦃 & +${GameCatalog.formatCompactPurrs(bonusPurrs)} ${state.activeCurrencyShortLabel}!"
+      }
+    )
+  }
+
+  fun playUiTap() {
+    soundManager.playUiTap()
+  }
+
+  fun playUiConfirm() {
+    soundManager.playUiConfirm()
+  }
+
+  fun playPillSlideTick() {
+    soundManager.playPillSlideTick()
+  }
+
   fun buyUpgrade(upgradeId: String) {
     val def = GameCatalog.upgrades.find { it.id == upgradeId } ?: return
     val state = _uiState.value
+    if (enforceModerationBlock(state)) return
     val current = state.profile
     val challenge = state.challengeState
     val isHardcore = challenge.isHardcoreMode
@@ -790,16 +1239,21 @@ class PurrGameViewModel(
     viewModelScope.launch { localStorage.savePlayerStats(nextStats) }
     grantPassXpImmediate(15L, incrementHourUpgrade = true)
 
+    val (syncedFest, _, _) = ensureHourlyFestivalAndQuests(challenge, System.currentTimeMillis())
     if (isHardcore) {
       val updatedLevels =
-        challenge.hardcoreUpgradeLevels.toMutableMap().apply { put(upgradeId, currentLevel + 1L) }
+        syncedFest.hardcoreUpgradeLevels.toMutableMap().apply { put(upgradeId, currentLevel + 1L) }
       val nextChallenge =
-        challenge.copy(
+        syncedFest.copy(
           hardcorePurrs = balance - cost,
           hardcoreUpgradeLevels = updatedLevels,
+          festHourUpgradesBought = syncedFest.festHourUpgradesBought + 1L,
         )
       saveChallengeAndRefresh(nextChallenge)
     } else {
+      saveChallengeAndRefresh(
+        syncedFest.copy(festHourUpgradesBought = syncedFest.festHourUpgradesBought + 1L)
+      )
       val updatedLevels =
         current.upgradeLevels.toMutableMap().apply { put(upgradeId, currentLevel + 1L) }
       val updatedProfile = current.copy(purrs = balance - cost, upgradeLevels = updatedLevels)
@@ -811,6 +1265,7 @@ class PurrGameViewModel(
   fun selectOrUnlockPattern(patternId: String) {
     val def = GameCatalog.patterns.find { it.id == patternId } ?: return
     val state = _uiState.value
+    if (enforceModerationBlock(state)) return
     val current = state.profile
     val challenge = state.challengeState
     val isHardcore = challenge.isHardcoreMode
@@ -837,6 +1292,9 @@ class PurrGameViewModel(
           selectedPatternId = patternId,
         )
       applyAndSaveImmediate(updated)
+      if (def.isEventExclusive) {
+        recordLimitedItemUnlock("PATTERN", patternId)
+      }
       _toastEvents.tryEmit("Unlocked & equipped ${def.name}!")
     } else {
       val missing = GameCatalog.formatCompactPurrs(cost - balance)
@@ -847,6 +1305,7 @@ class PurrGameViewModel(
   fun selectOrUnlockAccessory(accessoryId: String) {
     val def = GameCatalog.accessories.find { it.id == accessoryId } ?: return
     val state = _uiState.value
+    if (enforceModerationBlock(state)) return
     val current = state.profile
     val challenge = state.challengeState
     val isHardcore = challenge.isHardcoreMode
@@ -871,10 +1330,59 @@ class PurrGameViewModel(
           selectedAccessoryId = accessoryId,
         )
       applyAndSaveImmediate(updated)
+      if (def.isEventExclusive) {
+        recordLimitedItemUnlock("ACCESSORY", accessoryId)
+      }
       _toastEvents.tryEmit("Unlocked & equipped ${def.name}!")
     } else {
       val missing = GameCatalog.formatCompactPurrs(cost - balance)
       _toastEvents.tryEmit("Need $missing more ${state.activeCurrencyShortLabel} for ${def.name}.")
+    }
+  }
+
+  fun selectOrUnlockBackground(backgroundId: String) {
+    val def = GameCatalog.backgrounds.find { it.id == backgroundId } ?: return
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    val current = state.profile
+    val challenge = state.challengeState
+    val isHardcore = challenge.isHardcoreMode
+    val cost =
+      GameCatalog.effectiveItemCost(def.cost, isHardcore, challenge.unlockedAscensionIds)
+    val balance = state.activeCurrencyBalance
+
+    if (backgroundId in current.unlockedBackgrounds) {
+      applyAndSaveImmediate(current.copy(selectedBackgroundId = backgroundId))
+      soundManager.playUiConfirm()
+      _toastEvents.tryEmit("Equipped ${def.name} room!")
+    } else if (balance >= cost) {
+      val nextBalance = balance - cost
+      if (isHardcore) {
+        saveChallengeAndRefresh(challenge.copy(hardcorePurrs = nextBalance))
+      }
+      val updated =
+        current.copy(
+          purrs = if (isHardcore) current.purrs else nextBalance,
+          unlockedBackgrounds = (current.unlockedBackgrounds + backgroundId).distinct(),
+          selectedBackgroundId = backgroundId,
+        )
+      applyAndSaveImmediate(updated)
+      soundManager.playUiConfirm()
+      _toastEvents.tryEmit("Unlocked & equipped ${def.name}!")
+    } else {
+      val missing = GameCatalog.formatCompactPurrs(cost - balance)
+      _toastEvents.tryEmit("Need $missing more ${state.activeCurrencyShortLabel} for ${def.name}.")
+    }
+  }
+
+  fun dismissUpdateBlogPost() {
+    val version =
+      _uiState.value.pendingUpdateBlogPost?.version
+        ?: GameCatalog.blogPosts.firstOrNull()?.version
+        ?: return
+    _uiState.update { it.copy(pendingUpdateBlogPost = null) }
+    viewModelScope.launch {
+      localStorage.saveLastSeenBlogVersion(version)
     }
   }
 
@@ -915,11 +1423,15 @@ class PurrGameViewModel(
     } else {
       applyAndSaveImmediate(currentProfile.copy(purrs = nextBalance))
     }
+    val isFirstUnlock = theme.id !in currentSettings.unlockedColorThemes
     updateSettings { s ->
       s.copy(
         unlockedColorThemes = (s.unlockedColorThemes + theme.id).distinct(),
         colorTheme = theme,
       )
+    }
+    if (isFirstUnlock && !theme.isFree) {
+      recordLimitedItemUnlock("THEME", theme.id)
     }
     _toastEvents.tryEmit("Unlocked & applied ${theme.displayName} theme!")
   }
@@ -982,12 +1494,18 @@ class PurrGameViewModel(
 
     val starterPurrs =
       if ("asc_rebirth_echo" in challenge.unlockedAscensionIds) 1_000L else 0L
+    val starterUpgrades =
+      if ("asc_cosmic_sovereign" in challenge.unlockedAscensionIds) {
+        mapOf("feather_wand" to 3L, "cardboard_box" to 3L)
+      } else {
+        emptyMap()
+      }
 
     // Rebirths DO NOT reset dailyStreak or unlocked Color Themes!
     val resetProfile =
       current.copy(
         purrs = if (isHardcore) current.purrs else starterPurrs,
-        upgradeLevels = if (isHardcore) current.upgradeLevels else emptyMap(),
+        upgradeLevels = if (isHardcore) current.upgradeLevels else starterUpgrades,
         unlockedPatterns = preservedPatterns,
         unlockedAccessories = preservedAccessories,
         selectedPatternId = nextPattern,
@@ -1006,7 +1524,7 @@ class PurrGameViewModel(
         hardcoreUnlocked = nextHardcoreUnlocked,
         hardcorePurrs = if (isHardcore) starterPurrs else challenge.hardcorePurrs,
         hardcoreUpgradeLevels =
-          if (isHardcore) emptyMap() else challenge.hardcoreUpgradeLevels,
+          if (isHardcore) starterUpgrades else challenge.hardcoreUpgradeLevels,
         gems = challenge.gems + GameCatalog.REBIRTH_GEM_REWARD,
         totalGemsEarned = challenge.totalGemsEarned + GameCatalog.REBIRTH_GEM_REWARD,
       )
@@ -1026,7 +1544,7 @@ class PurrGameViewModel(
     viewModelScope.launch { localStorage.saveChallengeProgress(nextChallenge) }
     applyAndSaveImmediate(resetProfile)
     _toastEvents.tryEmit(
-      "Rebirth #$nextRebirthCount Complete! ${newMult}x multiplier & +${GameCatalog.REBIRTH_GEM_REWARD} Gems (Streak, Themes & Gems kept!)"
+      "Rebirth #$nextRebirthCount Complete! ${newMult}x multiplier & +${GameCatalog.REBIRTH_GEM_REWARD} Gem (Streak, Themes & Gems kept!)"
     )
   }
 
@@ -1054,12 +1572,18 @@ class PurrGameViewModel(
 
     val starterPurrs =
       if ("asc_rebirth_echo" in challenge.unlockedAscensionIds) 1_000L else 0L
+    val starterUpgrades =
+      if ("asc_cosmic_sovereign" in challenge.unlockedAscensionIds) {
+        mapOf("feather_wand" to 3L, "cardboard_box" to 3L)
+      } else {
+        emptyMap()
+      }
     val isHardcore = challenge.isHardcoreMode
 
     val resetProfile =
       current.copy(
         purrs = if (isHardcore) current.purrs else starterPurrs,
-        upgradeLevels = if (isHardcore) current.upgradeLevels else emptyMap(),
+        upgradeLevels = if (isHardcore) current.upgradeLevels else starterUpgrades,
         unlockedPatterns = preservedPatterns,
         unlockedAccessories = preservedAccessories,
         selectedPatternId = nextPattern,
@@ -1068,17 +1592,20 @@ class PurrGameViewModel(
 
     val nextShards = challenge.gatoShards + 1L
     val nextAscensionCount = challenge.ascensionCount + 1L
+    val ascensionGemGain =
+      GameCatalog.ASCENSION_GEM_REWARD +
+        (if ("asc_gem_seeker" in challenge.unlockedAscensionIds) 1L else 0L)
     val nextChallenge =
       challenge.copy(
         rebirthCount = GameCatalog.ASCENSION_RESET_REBIRTH_COUNT,
         rebirthBonusSteps = 0L,
         ascensionCount = nextAscensionCount,
         gatoShards = nextShards,
-        gems = challenge.gems + GameCatalog.ASCENSION_GEM_REWARD,
-        totalGemsEarned = challenge.totalGemsEarned + GameCatalog.ASCENSION_GEM_REWARD,
+        gems = challenge.gems + ascensionGemGain,
+        totalGemsEarned = challenge.totalGemsEarned + ascensionGemGain,
         hardcorePurrs = if (isHardcore) starterPurrs else challenge.hardcorePurrs,
         hardcoreUpgradeLevels =
-          if (isHardcore) emptyMap() else challenge.hardcoreUpgradeLevels,
+          if (isHardcore) starterUpgrades else challenge.hardcoreUpgradeLevels,
       )
     val resetMult = GameCatalog.rebirthMultiplier(0L, nextChallenge.unlockedAscensionIds)
     _uiState.update { s ->
@@ -1095,7 +1622,7 @@ class PurrGameViewModel(
     viewModelScope.launch { localStorage.saveChallengeProgress(nextChallenge) }
     applyAndSaveImmediate(resetProfile)
     _toastEvents.tryEmit(
-      "Gato Ascensión #$nextAscensionCount! Earned +1 Gato Shard & +${GameCatalog.ASCENSION_GEM_REWARD} Gems!"
+      "Gato Ascensión #$nextAscensionCount! Earned +1 Gato Shard & +$ascensionGemGain Gems!"
     )
   }
 
@@ -1120,7 +1647,10 @@ class PurrGameViewModel(
   private fun saveChallengeAndRefresh(nextChallenge: ChallengeProgressState) {
     challengeDirty = false
     _uiState.update { it.copy(challengeState = nextChallenge) }
-    viewModelScope.launch { localStorage.saveChallengeProgress(nextChallenge) }
+    viewModelScope.launch {
+      localStorage.saveChallengeProgress(nextChallenge)
+      onSyncWidgets()
+    }
     applyProfile(_uiState.value.profile, isLoaded = true)
   }
 
@@ -1166,12 +1696,18 @@ class PurrGameViewModel(
         if (reward.bonusItemId.isNotBlank() && reward.bonusItemId !in unlockedPatterns) {
           unlockedPatterns = unlockedPatterns + reward.bonusItemId
           bonusLabelSuffix = " & ${reward.bonusPrizeLabel}"
+          if (GameCatalog.patterns.any { it.id == reward.bonusItemId && it.isEventExclusive }) {
+            recordLimitedItemUnlock("PATTERN", reward.bonusItemId)
+          }
         }
       }
       DailyBonusPrizeType.ACCESSORY -> {
         if (reward.bonusItemId.isNotBlank() && reward.bonusItemId !in unlockedAccessories) {
           unlockedAccessories = unlockedAccessories + reward.bonusItemId
           bonusLabelSuffix = " & ${reward.bonusPrizeLabel}"
+          if (GameCatalog.accessories.any { it.id == reward.bonusItemId && it.isEventExclusive }) {
+            recordLimitedItemUnlock("ACCESSORY", reward.bonusItemId)
+          }
         }
       }
       DailyBonusPrizeType.COLOR_THEME -> {
@@ -1180,6 +1716,9 @@ class PurrGameViewModel(
             s.copy(unlockedColorThemes = (s.unlockedColorThemes + reward.bonusItemId).distinct())
           }
           bonusLabelSuffix = " & ${reward.bonusPrizeLabel}"
+          if (AppColorTheme.entries.any { it.id == reward.bonusItemId && !it.isFree }) {
+            recordLimitedItemUnlock("THEME", reward.bonusItemId)
+          }
         }
       }
       DailyBonusPrizeType.UPGRADE_LEVEL,
@@ -1370,6 +1909,8 @@ class PurrGameViewModel(
         state.activeEvent,
         state.moonlightState.phase,
         challenge,
+        state.goldenRainActive,
+        state.festivalTier,
       )
     val report =
       GameCatalog.computeOfflineEarnings(
@@ -1377,6 +1918,7 @@ class PurrGameViewModel(
         effectivePps = pps,
         isHardcore = challenge.isHardcoreMode,
         hasAscended = challenge.ascensionCount > 0L,
+        unlockedAscensionIds = challenge.unlockedAscensionIds,
       )
     if (report == null) {
       val updatedStats = state.playerStats.copy(lastActiveTimestampMillis = nowMs)
@@ -1570,6 +2112,48 @@ class PurrGameViewModel(
     _toastEvents.tryEmit("Claimed ${toGrant.size} November Pass reward(s)!")
   }
 
+  fun restartNovemberPass() {
+    val state = _uiState.value
+    val pass = state.battlePassState
+    if (!GameCatalog.isNovemberPassCompleted(pass)) {
+      _toastEvents.tryEmit("Reach Tier 30 on your active tracks to restart the November Pass!")
+      return
+    }
+    val freeTier = GameCatalog.freeTierFromXp(pass.passXp)
+    val vipTier = GameCatalog.vipTierFromXp(pass.passXp)
+    if (countClaimablePassRewards(pass, freeTier, vipTier) > 0) {
+      _toastEvents.tryEmit("Claim all remaining November Pass rewards first before restarting!")
+      return
+    }
+    val nextPass =
+      pass.copy(
+        passXp = 0L,
+        claimedFreeTiers = emptyList(),
+        claimedVipTiers = emptyList(),
+        passCompletions = pass.passCompletions + 1L,
+      )
+    val nextFreeTier = GameCatalog.freeTierFromXp(0L)
+    val nextVipTier = GameCatalog.vipTierFromXp(0L)
+    val quests = GameCatalog.evaluateHourlyPassQuests(nextPass)
+    passDirty = false
+    _uiState.update {
+      it.copy(
+        battlePassState = nextPass,
+        currentPassTier = nextFreeTier,
+        currentVipPassTier = nextVipTier,
+        freePassStepProgress = GameCatalog.freeXpProgressInCurrentTier(0L),
+        vipPassStepProgress = GameCatalog.vipXpProgressInCurrentTier(0L),
+        hourlyPassQuests = quests,
+        claimablePassQuestsCount = quests.count { q -> !q.isClaimed && q.isCompleted },
+        claimablePassCount = 0,
+      )
+    }
+    viewModelScope.launch { localStorage.saveBattlePassState(nextPass) }
+    _toastEvents.tryEmit(
+      "November Pass restarted! Entering Cycle #${nextPass.passCompletions + 1L}!"
+    )
+  }
+
   fun claimHourlyPassQuest(questId: String) {
     val now = System.currentTimeMillis()
     val state = _uiState.value
@@ -1581,9 +2165,12 @@ class PurrGameViewModel(
       return
     }
 
+    val hasScholar = "asc_pass_scholar" in state.challengeState.unlockedAscensionIds
+    val boostedXp =
+      if (hasScholar) (quest.xpReward * 1.5).roundToLong() else quest.xpReward
     val nextPass =
       syncedPass.copy(
-        passXp = syncedPass.passXp + quest.xpReward,
+        passXp = syncedPass.passXp + boostedXp,
         claimedPassQuestIds = (syncedPass.claimedPassQuestIds + questId).distinct(),
       )
     val freeTier = GameCatalog.freeTierFromXp(nextPass.passXp)
@@ -1604,7 +2191,7 @@ class PurrGameViewModel(
       )
     }
     viewModelScope.launch { localStorage.saveBattlePassState(nextPass) }
-    _toastEvents.tryEmit("Pass Quest Complete! +${quest.xpReward} Pass XP")
+    _toastEvents.tryEmit("Pass Quest Complete! +$boostedXp Pass XP")
   }
 
   private fun applyPassRewards(
@@ -1642,11 +2229,17 @@ class PurrGameViewModel(
         PassRewardKind.ACCESSORY -> {
           if (reward.itemId.isNotBlank() && reward.itemId !in accessories) {
             accessories.add(reward.itemId)
+            if (GameCatalog.accessories.any { it.id == reward.itemId && it.isEventExclusive }) {
+              recordLimitedItemUnlock("ACCESSORY", reward.itemId)
+            }
           }
         }
         PassRewardKind.SKIN -> {
           if (reward.itemId.isNotBlank() && reward.itemId !in patterns) {
             patterns.add(reward.itemId)
+            if (GameCatalog.patterns.any { it.id == reward.itemId && it.isEventExclusive }) {
+              recordLimitedItemUnlock("PATTERN", reward.itemId)
+            }
           }
         }
       }
@@ -1701,10 +2294,12 @@ class PurrGameViewModel(
   private fun grantPassXpImmediate(xpGain: Long, incrementHourUpgrade: Boolean = false) {
     if (xpGain <= 0L && !incrementHourUpgrade) return
     val now = System.currentTimeMillis()
+    val hasScholar = "asc_pass_scholar" in _uiState.value.challengeState.unlockedAscensionIds
+    val effectiveXp = if (hasScholar && xpGain > 0L) (xpGain * 1.5).roundToLong() else xpGain
     val (syncedPass, _) = ensureHourlyPassQuests(_uiState.value.battlePassState, now)
     val nextPass =
       syncedPass.copy(
-        passXp = syncedPass.passXp + xpGain,
+        passXp = syncedPass.passXp + effectiveXp,
         hourUpgradesBought =
           syncedPass.hourUpgradesBought + (if (incrementHourUpgrade) 1L else 0L),
       )
@@ -1848,8 +2443,13 @@ class PurrGameViewModel(
         weatherShiftCount = state.weather.weatherShiftCount + 1L,
       )
     secondsUntilNextWeather = WeatherRepository.WEATHER_INTERVAL_SECONDS
-    val nextChallenge = challenge.copy(gems = challenge.gems - GameCatalog.GEM_WEATHER_SUMMON_COST)
     val now = System.currentTimeMillis()
+    val (syncedFest, _, _) = ensureHourlyFestivalAndQuests(challenge, now)
+    val nextChallenge =
+      syncedFest.copy(
+        gems = syncedFest.gems - GameCatalog.GEM_WEATHER_SUMMON_COST,
+        festHourWeatherShifts = syncedFest.festHourWeatherShifts + 1L,
+      )
     val (syncedPass, _) = ensureHourlyPassQuests(state.battlePassState, now)
     val nextPass =
       syncedPass.copy(
@@ -1907,6 +2507,9 @@ class PurrGameViewModel(
         selectedPatternId = patternId,
       )
     )
+    if (def.isEventExclusive) {
+      recordLimitedItemUnlock("PATTERN", patternId)
+    }
     _toastEvents.tryEmit("💎 Unlocked & equipped ${def.name}!")
   }
 
@@ -1931,6 +2534,9 @@ class PurrGameViewModel(
         selectedAccessoryId = accessoryId,
       )
     )
+    if (def.isEventExclusive) {
+      recordLimitedItemUnlock("ACCESSORY", accessoryId)
+    }
     _toastEvents.tryEmit("💎 Unlocked & equipped ${def.name}!")
   }
 
@@ -1956,6 +2562,9 @@ class PurrGameViewModel(
         colorTheme = theme,
       )
     }
+    if (!theme.isFree) {
+      recordLimitedItemUnlock("THEME", theme.id)
+    }
     _toastEvents.tryEmit("💎 Unlocked & applied ${theme.displayName} theme!")
   }
 
@@ -1974,6 +2583,217 @@ class PurrGameViewModel(
       )
     )
     _toastEvents.tryEmit("💎 Forged +1 Gato Shard from ${GameCatalog.GEM_SHARD_FORGE_COST} Gems!")
+  }
+
+  // Thanksgiving Event Part Two: Hourly Festival (67% Regular / 33% Gravy Rush), Turkeys, Golden Gobblers, Turkey Gato & Quests
+  private fun ensureHourlyFestivalAndQuests(
+    challenge: ChallengeProgressState,
+    nowMillis: Long,
+  ): Triple<ChallengeProgressState, Boolean, Boolean> {
+    val epochHour = GameCatalog.currentEpochHour(nowMillis)
+    var next = challenge
+    var changed = false
+    var hourRerolled = false
+    if (next.festivalHourEpoch != epochHour) {
+      val rollMega = GameCatalog.rollHourlyFestivalIsMega()
+      next = next.copy(festivalHourEpoch = epochHour, festivalIsMega = rollMega)
+      changed = true
+      hourRerolled = true
+    }
+    if (next.festivalQuestHourEpoch != epochHour) {
+      next =
+        next.copy(
+          festivalQuestHourEpoch = epochHour,
+          claimedFestivalQuestIds = emptyList(),
+          festHourPets = 0L,
+          festHourTurkeysTapped = 0L,
+          festHourUpgradesBought = 0L,
+          festHourWeatherShifts = 0L,
+        )
+      changed = true
+    }
+    return Triple(next, changed, hourRerolled)
+  }
+
+  fun collectSpawnedTurkey(turkeyId: Long) {
+    val state = _uiState.value
+    if (state.isLoading) return
+    if (enforceModerationBlock(state)) return
+    val targetTurkey = state.spawnedTurkeys.find { it.id == turkeyId } ?: return
+
+    val now = System.currentTimeMillis()
+    val (syncedFest, _, _) = ensureHourlyFestivalAndQuests(state.challengeState, now)
+    val rewardAmount =
+      if (targetTurkey.isGoldenGobbler) GameCatalog.GOLDEN_GOBBLER_REWARD else 1L
+    val passXp = if (targetTurkey.isGoldenGobbler) 12L else 5L
+    val nextChallenge =
+      syncedFest.copy(
+        turkeys = syncedFest.turkeys + rewardAmount,
+        totalTurkeysEarned = syncedFest.totalTurkeysEarned + rewardAmount,
+        festHourTurkeysTapped = syncedFest.festHourTurkeysTapped + 1L,
+      )
+    _uiState.update { s ->
+      s.copy(spawnedTurkeys = s.spawnedTurkeys.filterNot { it.id == turkeyId })
+    }
+    soundManager.playCatTapSound(isComboCrit = true)
+    saveChallengeAndRefresh(nextChallenge)
+    grantPassXpImmediate(passXp)
+    _toastEvents.tryEmit(
+      if (targetTurkey.isGoldenGobbler) {
+        "✨🦃 Caught a GOLDEN GOBBLER! (+$rewardAmount Turkeys • Total: ${nextChallenge.turkeys})"
+      } else {
+        "🦃 Caught a Turkey! (+1 Turkey • Total: ${nextChallenge.turkeys})"
+      }
+    )
+  }
+
+  fun talkToTurkeyGato() {
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    val challenge = state.challengeState
+    val nextTalkCount = (challenge.turkeyGatoTalkCount + 1).coerceAtMost(GameCatalog.TURKEY_GATO_MAP_TALKS + 10)
+    val unlockedNow =
+      !challenge.part2MapUnlocked && nextTalkCount >= GameCatalog.TURKEY_GATO_MAP_TALKS
+    val nextChallenge =
+      challenge.copy(
+        turkeyGatoTalkCount = nextTalkCount,
+        part2MapUnlocked = challenge.part2MapUnlocked || unlockedNow,
+      )
+    saveChallengeAndRefresh(nextChallenge)
+    if (unlockedNow) {
+      _toastEvents.tryEmit("🗺️ Turkey Gato gifted you the Part 2 Feast Map! View it anytime!")
+    }
+  }
+
+  fun unlockTurkeyPattern(patternId: String) {
+    val def = GameCatalog.patterns.find { it.id == patternId && it.turkeyCost > 0L } ?: return
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    val profile = state.profile
+    if (patternId in profile.unlockedPatterns) {
+      applyAndSaveImmediate(profile.copy(selectedPatternId = patternId))
+      _toastEvents.tryEmit("Equipped ${def.name} coat!")
+      return
+    }
+    val challenge = state.challengeState
+    if (challenge.turkeys < def.turkeyCost) {
+      _toastEvents.tryEmit("Need ${def.turkeyCost - challenge.turkeys} more 🦃 Turkeys for ${def.name}!")
+      return
+    }
+    saveChallengeAndRefresh(challenge.copy(turkeys = challenge.turkeys - def.turkeyCost))
+    applyAndSaveImmediate(
+      profile.copy(
+        unlockedPatterns = (profile.unlockedPatterns + patternId).distinct(),
+        selectedPatternId = patternId,
+      )
+    )
+    recordLimitedItemUnlock("PATTERN", patternId)
+    _toastEvents.tryEmit("🦃 Unlocked & equipped ${def.name}!")
+  }
+
+  fun unlockTurkeyAccessory(accessoryId: String) {
+    val def = GameCatalog.accessories.find { it.id == accessoryId && it.turkeyCost > 0L } ?: return
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    val profile = state.profile
+    if (accessoryId in profile.unlockedAccessories) {
+      applyAndSaveImmediate(profile.copy(selectedAccessoryId = accessoryId))
+      _toastEvents.tryEmit("Equipped ${def.name}!")
+      return
+    }
+    val challenge = state.challengeState
+    if (challenge.turkeys < def.turkeyCost) {
+      _toastEvents.tryEmit("Need ${def.turkeyCost - challenge.turkeys} more 🦃 Turkeys for ${def.name}!")
+      return
+    }
+    saveChallengeAndRefresh(challenge.copy(turkeys = challenge.turkeys - def.turkeyCost))
+    applyAndSaveImmediate(
+      profile.copy(
+        unlockedAccessories = (profile.unlockedAccessories + accessoryId).distinct(),
+        selectedAccessoryId = accessoryId,
+      )
+    )
+    recordLimitedItemUnlock("ACCESSORY", accessoryId)
+    _toastEvents.tryEmit("🦃 Unlocked & equipped ${def.name}!")
+  }
+
+  fun unlockTurkeyTheme(theme: AppColorTheme) {
+    if (theme.turkeyCost <= 0L) return
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    if (theme.id in state.settings.unlockedColorThemes) {
+      updateSettings { it.copy(colorTheme = theme) }
+      _toastEvents.tryEmit("Applied ${theme.displayName} theme!")
+      return
+    }
+    val challenge = state.challengeState
+    if (challenge.turkeys < theme.turkeyCost) {
+      _toastEvents.tryEmit(
+        "Need ${theme.turkeyCost - challenge.turkeys} more 🦃 Turkeys for ${theme.displayName}!"
+      )
+      return
+    }
+    saveChallengeAndRefresh(challenge.copy(turkeys = challenge.turkeys - theme.turkeyCost))
+    updateSettings { s ->
+      s.copy(
+        unlockedColorThemes = (s.unlockedColorThemes + theme.id).distinct(),
+        colorTheme = theme,
+      )
+    }
+    recordLimitedItemUnlock("THEME", theme.id)
+    _toastEvents.tryEmit("🦃 Unlocked & applied ${theme.displayName} theme!")
+  }
+
+  fun unlockTurkeyBackground(backgroundId: String) {
+    val def = GameCatalog.backgrounds.find { it.id == backgroundId && it.turkeyCost > 0L } ?: return
+    val state = _uiState.value
+    if (enforceModerationBlock(state)) return
+    val current = state.profile
+    if (backgroundId in current.unlockedBackgrounds) {
+      applyAndSaveImmediate(current.copy(selectedBackgroundId = backgroundId))
+      soundManager.playUiConfirm()
+      _toastEvents.tryEmit("Equipped ${def.name} room!")
+      return
+    }
+    val challenge = state.challengeState
+    if (challenge.turkeys < def.turkeyCost) {
+      _toastEvents.tryEmit(
+        "Need ${def.turkeyCost - challenge.turkeys} more 🦃 Turkeys for ${def.name}!"
+      )
+      return
+    }
+    saveChallengeAndRefresh(challenge.copy(turkeys = challenge.turkeys - def.turkeyCost))
+    val updated =
+      current.copy(
+        unlockedBackgrounds = (current.unlockedBackgrounds + backgroundId).distinct(),
+        selectedBackgroundId = backgroundId,
+      )
+    applyAndSaveImmediate(updated)
+    recordLimitedItemUnlock("BACKGROUND", backgroundId)
+    soundManager.playUiConfirm()
+    _toastEvents.tryEmit("🦃 Unlocked & equipped ${def.name} room!")
+  }
+
+  fun claimFestivalQuest(questId: String) {
+    val now = System.currentTimeMillis()
+    val state = _uiState.value
+    val (syncedFest, _, _) = ensureHourlyFestivalAndQuests(state.challengeState, now)
+    val quest = GameCatalog.evaluateHourlyFestivalQuests(syncedFest).find { it.template.id == questId } ?: return
+    if (quest.isClaimed) return
+    if (!quest.isCompleted) {
+      _toastEvents.tryEmit("${quest.template.title}: ${quest.progress}/${quest.template.target}")
+      return
+    }
+    val reward = quest.template.turkeyReward
+    val nextChallenge =
+      syncedFest.copy(
+        turkeys = syncedFest.turkeys + reward,
+        totalTurkeysEarned = syncedFest.totalTurkeysEarned + reward,
+        claimedFestivalQuestIds = (syncedFest.claimedFestivalQuestIds + questId).distinct(),
+      )
+    saveChallengeAndRefresh(nextChallenge)
+    grantPassXpImmediate(40L)
+    _toastEvents.tryEmit("🦃 Festival Quest Complete! +$reward Turkeys earned!")
   }
 
   // Alternative Sign-In Options & Backup Save Code Export/Import
@@ -2038,6 +2858,11 @@ class PurrGameViewModel(
     val now = System.currentTimeMillis()
     val state = _uiState.value
     val challenge = state.challengeState
+    if (challenge.dogComputerSearched) {
+      _uiState.update { it.copy(showWindowGatoExitConfrontation = false) }
+      _toastEvents.tryEmit("The Dog Vault Keeper stays silent and leaves you alone.")
+      return false
+    }
     val remaining = (challenge.vaultKickoutUntilMillis - now).coerceAtLeast(0L)
     if (remaining > 0L) {
       val formatted = formatDuration(remaining)
@@ -2066,6 +2891,9 @@ class PurrGameViewModel(
           unlockedColorThemes = (s.unlockedColorThemes + AppColorTheme.HACKER_PROTOCOL.id).distinct(),
           colorTheme = AppColorTheme.HACKER_PROTOCOL,
         )
+      }
+      if (!alreadyHadTheme) {
+        recordLimitedItemUnlock("THEME", AppColorTheme.HACKER_PROTOCOL.id)
       }
 
       val profile = _uiState.value.profile
@@ -2099,9 +2927,76 @@ class PurrGameViewModel(
     }
   }
 
+  fun unlockCatComputer(attempt: String): Boolean {
+    if (GameCatalog.isValidCatComputerPassword(attempt)) {
+      val state = _uiState.value
+      if (!state.challengeState.catComputerUnlocked) {
+        saveChallengeAndRefresh(state.challengeState.copy(catComputerUnlocked = true))
+      }
+      soundManager.playWindowGatoStartupChime()
+      _uiState.update {
+        it.copy(showWindowGatoDesktop = true, showWindowGatoExitConfrontation = false)
+      }
+      _toastEvents.tryEmit("Access granted — Booting Window Gato OS...")
+      return true
+    } else {
+      soundManager.playWindowGatoErrorBeep()
+      _toastEvents.tryEmit("Incorrect password! Read the riddle & hint below.")
+      return false
+    }
+  }
+
+  fun openWindowGatoDesktop() {
+    val state = _uiState.value
+    if (!state.challengeState.catComputerUnlocked) {
+      soundManager.playWindowGatoErrorBeep()
+      _toastEvents.tryEmit("Enter the Cat Computer password first!")
+      return
+    }
+    soundManager.playWindowGatoStartupChime()
+    _uiState.update {
+      it.copy(showWindowGatoDesktop = true, showWindowGatoExitConfrontation = false)
+    }
+  }
+
+  fun closeWindowGatoDesktop() {
+    val state = _uiState.value
+    if (!state.challengeState.dogComputerSearched) {
+      saveChallengeAndRefresh(state.challengeState.copy(dogComputerSearched = true))
+    }
+    _uiState.update {
+      it.copy(
+        showWindowGatoDesktop = false,
+        showWindowGatoExitConfrontation = true,
+        vaultKeeperTapCount = 0,
+      )
+    }
+  }
+
+  fun dismissWindowGatoConfrontation() {
+    _uiState.update { it.copy(showWindowGatoExitConfrontation = false) }
+  }
+
+  fun playCorruptedAudioSample(clipId: String) {
+    soundManager.playCorruptedAudioSample(clipId)
+  }
+
+  fun playWindowGatoErrorSound() {
+    soundManager.playWindowGatoErrorBeep()
+  }
+
+  fun playCatScoldSound() {
+    soundManager.playSpecificSfx(CatSoundEffect.FRENZY_EXCITED_MEOW)
+  }
+
   // Settings & Built-In Music Player Controls
   fun setThemeMode(mode: ThemeMode) {
     updateSettings { it.copy(themeMode = mode) }
+  }
+
+  fun setNavigationFormat(format: NavigationLayoutFormat) {
+    updateSettings { it.copy(navigationFormat = format) }
+    _toastEvents.tryEmit("Navigation layout set to ${format.label}")
   }
 
   fun setSfxEnabled(enabled: Boolean) {
@@ -2132,8 +3027,52 @@ class PurrGameViewModel(
     val allIds = MusicTrack.entries.map { it.id } + settings.customTracks.map { it.id }
     if (allIds.isEmpty()) return
     val currentIndex = allIds.indexOf(settings.selectedTrackId).coerceAtLeast(0)
-    val nextIndex = (currentIndex + step + allIds.size) % allIds.size
+    val nextIndex =
+      if (settings.shuffleEnabled && allIds.size > 1) {
+        val candidates = allIds.indices.filter { it != currentIndex }
+        candidates[Random.nextInt(candidates.size)]
+      } else {
+        (currentIndex + step + allIds.size) % allIds.size
+      }
     updateSettings { it.copy(selectedTrackId = allIds[nextIndex], isMusicPlaying = true) }
+  }
+
+  private fun handleTrackNaturallyEnded() {
+    val settings = _uiState.value.settings
+    when (settings.repeatMode) {
+      RepeatMode.OFF -> updateSettings { it.copy(isMusicPlaying = false) }
+      RepeatMode.ONE -> Unit
+      RepeatMode.ALL -> skipMusicTrack(1)
+    }
+  }
+
+  fun seekMusicTo(positionMs: Long) {
+    soundManager.seekTo(positionMs)
+  }
+
+  fun cycleMusicRepeatMode() {
+    val nextMode = _uiState.value.settings.repeatMode.next()
+    updateSettings { it.copy(repeatMode = nextMode) }
+    _toastEvents.tryEmit("Repeat: ${nextMode.label}")
+  }
+
+  fun toggleMusicShuffle() {
+    val nextShuffle = !_uiState.value.settings.shuffleEnabled
+    updateSettings { it.copy(shuffleEnabled = nextShuffle) }
+    _toastEvents.tryEmit(if (nextShuffle) "Shuffle Enabled" else "Shuffle Disabled")
+  }
+
+  fun setMusicPlaybackSpeed(speed: Float) {
+    val clamped = speed.coerceIn(0.75f, 1.5f)
+    updateSettings { it.copy(playbackSpeed = clamped) }
+    _toastEvents.tryEmit("Playback speed set to ${clamped}x")
+  }
+
+  fun setMusicSleepTimer(minutes: Int) {
+    soundManager.setSleepTimer(minutes)
+    _toastEvents.tryEmit(
+      if (minutes <= 0) "Sleep timer cleared." else "Music sleep timer set for ${minutes}m."
+    )
   }
 
   fun setMusicVolume(volume: Float) {
@@ -2242,8 +3181,15 @@ class PurrGameViewModel(
         val profileSnapshot = _uiState.value.profile
         val challengeSnapshot = _uiState.value.challengeState
         val passSnapshot = _uiState.value.battlePassState
+        val weatherSnapshot = _uiState.value.weather
         viewModelScope.launch {
           runCatching { localStorage.savePlayerStats(nextStats) }
+          runCatching {
+            localStorage.saveWidgetWeatherSnapshot(
+              weatherSnapshot.condition.label,
+              weatherSnapshot.temperatureC.toInt(),
+            )
+          }
           if (passDirty) {
             passDirty = false
             runCatching { localStorage.saveBattlePassState(passSnapshot) }
@@ -2256,6 +3202,7 @@ class PurrGameViewModel(
           if (!isDirty) {
             runCatching { localStorage.saveProfile(profileSnapshot) }
           }
+          onSyncWidgets()
         }
       }
     } else {
@@ -2267,8 +3214,52 @@ class PurrGameViewModel(
             totalPlaySessions = _uiState.value.playerStats.totalPlaySessions + 1L
           )
         _uiState.update { it.copy(playerStats = nextStats) }
-        processOfflineReturn(pauseAt, now)
-        checkWeeklyAutoRollover(now)
+        viewModelScope.launch {
+          runCatching {
+            val diskProfile = localStorage.loadProfile()
+            val diskChallenge = localStorage.loadChallengeProgress()
+            val diskPass = localStorage.loadBattlePassState()
+            val memPets = _uiState.value.profile.totalPets
+            if (diskProfile.totalPets > memPets) {
+              val mergedProfile =
+                _uiState.value.profile.copy(
+                  purrs = maxOf(_uiState.value.profile.purrs, diskProfile.purrs),
+                  totalPurrsEarned =
+                    maxOf(_uiState.value.profile.totalPurrsEarned, diskProfile.totalPurrsEarned),
+                  totalPets = diskProfile.totalPets,
+                  eventPurrsEarned =
+                    maxOf(_uiState.value.profile.eventPurrsEarned, diskProfile.eventPurrsEarned),
+                )
+              val mergedChallenge =
+                _uiState.value.challengeState.copy(
+                  hardcorePurrs =
+                    maxOf(_uiState.value.challengeState.hardcorePurrs, diskChallenge.hardcorePurrs)
+                )
+              val mergedPass =
+                _uiState.value.battlePassState.let { memPass ->
+                  if (diskPass.passXp > memPass.passXp) {
+                    memPass.copy(
+                      passXp = diskPass.passXp,
+                      hourPets = maxOf(memPass.hourPets, diskPass.hourPets),
+                      hourPurrsEarned = maxOf(memPass.hourPurrsEarned, diskPass.hourPurrsEarned),
+                    )
+                  } else {
+                    memPass
+                  }
+                }
+              _uiState.update { s ->
+                s.copy(
+                  profile = mergedProfile,
+                  challengeState = mergedChallenge,
+                  battlePassState = mergedPass,
+                )
+              }
+            }
+          }
+          processOfflineReturn(pauseAt, now)
+          checkWeeklyAutoRollover(now)
+          onSyncWidgets()
+        }
       }
     }
   }
@@ -2288,10 +3279,21 @@ class PurrGameViewModel(
       musicVolume = settings.musicVolume,
       trackId = settings.selectedTrackId,
       customTracks = settings.customTracks,
+      repeatMode = settings.repeatMode,
+      shuffleEnabled = settings.shuffleEnabled,
+      playbackSpeed = settings.playbackSpeed,
     )
   }
 
   private fun applyAndSaveImmediate(updatedProfile: UserProfile) {
+    val currentState = _uiState.value
+    val shouldTriggerTrillion =
+      updatedProfile.totalPurrsEarned >= 1_000_000_000_000L &&
+        !currentState.challengeState.trillionCutsceneSeen &&
+        !currentState.showTrillionCutscene
+    if (shouldTriggerTrillion) {
+      _uiState.update { it.copy(showTrillionCutscene = true) }
+    }
     applyProfile(updatedProfile, isLoaded = true)
     isDirty = true
     viewModelScope.launch { persistCurrentProfile() }
@@ -2308,6 +3310,7 @@ class PurrGameViewModel(
       val moonlight =
         GameCatalog.evaluateMoonlightWindow(localMinute, 360, isBloodmoonTonight)
       val challenge = state.challengeState
+      val festTier = GameCatalog.festivalTierFor(challenge.festivalIsMega)
       val nextStreakPreview = computeNextStreakNumber(profile, epochDay)
       val goldenActive = state.battlePassState.goldenRainRemainingMillis > 0L
       state.copy(
@@ -2316,6 +3319,11 @@ class PurrGameViewModel(
         profile = profile,
         weather = weather,
         activeEvent = event,
+        festivalTier = festTier,
+        festivalRerollCountdownText = formatDuration(GameCatalog.millisUntilNextEpochHour(now)),
+        isTurkeyRushActive = GameCatalog.isTurkeySpawnWindowActive(now),
+        turkeyRushCountdownText = GameCatalog.turkeyRushStatusText(now),
+        hourlyFestivalQuests = GameCatalog.evaluateHourlyFestivalQuests(challenge),
         eventCountdownText = formatDuration(remaining),
         weeklyResetCountdownText = formatDuration(GameCatalog.millisUntilNextWeeklyReset(now)),
         moonlightState = moonlight,
@@ -2337,6 +3345,7 @@ class PurrGameViewModel(
             state.comboMultiplier,
             challenge,
             goldenActive,
+            festTier,
           ),
         effectivePps =
           computeEffectivePps(
@@ -2346,6 +3355,7 @@ class PurrGameViewModel(
             moonlight.phase,
             challenge,
             goldenActive,
+            festTier,
           ),
         canClaimDailyReward = profile.lastDailyClaimEpochDay < epochDay,
         nextDailyDayIndex = computeNextDailyDay(profile, epochDay),
@@ -2364,18 +3374,41 @@ class PurrGameViewModel(
     }
   }
 
+  private fun buildPublicStatsSnapshot(
+    state: PurrGameUiState = _uiState.value,
+    profile: UserProfile = state.profile,
+  ): LeaderboardPublicStats {
+    return LeaderboardPublicStats(
+      rebirths = state.challengeState.rebirthCount,
+      ascensions = state.challengeState.ascensionCount,
+      dailyStreak = profile.dailyStreak,
+      highestComboX100 =
+        (state.playerStats.highestComboMultiplier * 100.0).roundToLong().coerceAtLeast(100L),
+    )
+  }
+
   private suspend fun persistCurrentProfile() {
     if (!hasInitializedProfile) return
-    val snapshot = _uiState.value.profile
+    val stateSnapshot = _uiState.value
+    val snapshot = stateSnapshot.profile
+    val publicStats = buildPublicStatsSnapshot(stateSnapshot, snapshot)
     isDirty = false
     localStorage.saveProfile(snapshot)
+    onSyncWidgets()
     val repo = repository
     if (repo != null && currentUserId != null) {
-      runCatching { repo.saveProfileAndLeaderboard(snapshot) }
-        .onFailure { e ->
-          Log.w(TAG, "Cloud save deferred due to error: ${e.message}")
-          isDirty = true
-        }
+      isCloudSaveInFlight = true
+      try {
+        repo.saveProfileAndLeaderboard(snapshot, publicStats)
+      } catch (e: CancellationException) {
+        isDirty = true
+        throw e
+      } catch (e: Exception) {
+        Log.w(TAG, "Cloud save deferred due to error: ${e.message}")
+        isDirty = true
+      } finally {
+        isCloudSaveInFlight = false
+      }
     }
   }
 
@@ -2383,10 +3416,19 @@ class PurrGameViewModel(
     super.onCleared()
     soundManager.release()
     val now = System.currentTimeMillis()
-    val snapshot = _uiState.value.profile
-    val challengeSnapshot = _uiState.value.challengeState
-    val statsSnapshot = _uiState.value.playerStats.copy(lastActiveTimestampMillis = now)
-    val passSnapshot = _uiState.value.battlePassState
+    val stateSnapshot = _uiState.value
+    val snapshot = stateSnapshot.profile
+    val challengeSnapshot = stateSnapshot.challengeState
+    val statsSnapshot = stateSnapshot.playerStats.copy(lastActiveTimestampMillis = now)
+    val publicStats =
+      LeaderboardPublicStats(
+        rebirths = challengeSnapshot.rebirthCount,
+        ascensions = challengeSnapshot.ascensionCount,
+        dailyStreak = snapshot.dailyStreak,
+        highestComboX100 =
+          (statsSnapshot.highestComboMultiplier * 100.0).roundToLong().coerceAtLeast(100L),
+      )
+    val passSnapshot = stateSnapshot.battlePassState
     val saveProfileNow = isDirty && hasInitializedProfile
     val saveChallengeNow = challengeDirty && hasInitializedProfile
     val savePassNow = passDirty && hasInitializedProfile
@@ -2401,7 +3443,7 @@ class PurrGameViewModel(
         if (saveProfileNow) {
           runCatching { localStorage.saveProfile(snapshot) }
           if (repo != null && uid != null) {
-            runCatching { repo.saveProfileAndLeaderboard(snapshot) }
+            runCatching { repo.saveProfileAndLeaderboard(snapshot, publicStats) }
           }
         }
         if (saveChallengeNow) {
@@ -2411,6 +3453,366 @@ class PurrGameViewModel(
     }
   }
 
+  // Public Profile Customization, Announcements, Limited Exist Counters, Admin Panel & Danger Zone
+  fun updatePublicProfileCustomization(
+    statsPublic: Boolean,
+    bio: String,
+    avatarBase64: String,
+    bannerBase64: String,
+  ) {
+    val updated =
+      _uiState.value.profile.copy(
+        statsPublic = statsPublic,
+        bio = bio.trim().take(140),
+        avatarBase64 = avatarBase64.take(60_000),
+        bannerBase64 = bannerBase64.take(120_000),
+      )
+    applyProfile(updated, isLoaded = true)
+    isDirty = true
+    viewModelScope.launch {
+      localStorage.saveProfile(updated)
+      val repo = repository
+      if (repo != null && currentUserId != null) {
+        isCloudSaveInFlight = true
+        try {
+          repo.saveProfileAndLeaderboard(updated, buildPublicStatsSnapshot(_uiState.value, updated))
+          if (_uiState.value.profile == updated) {
+            isDirty = false
+          }
+          _toastEvents.tryEmit("Public profile & artwork updated!")
+        } catch (e: CancellationException) {
+          isDirty = true
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Profile artwork cloud save failed: ${e.message}")
+          isDirty = true
+          _toastEvents.tryEmit("Saved locally — cloud sync will retry shortly.")
+        } finally {
+          isCloudSaveInFlight = false
+        }
+      } else {
+        isDirty = false
+        _toastEvents.tryEmit("Public profile updated!")
+      }
+    }
+  }
+
+  fun dismissGlobalAnnouncement(messageId: String) {
+    if (messageId.isBlank()) return
+    _uiState.update { it.copy(dismissedAnnouncementId = messageId) }
+    viewModelScope.launch { localStorage.saveDismissedAnnouncementId(messageId) }
+  }
+
+  fun adminGrantSelfCurrency(
+    purrs: Long,
+    hardcorePurrs: Long,
+    gems: Long,
+    shards: Long,
+    passXp: Long,
+  ) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val current = state.profile
+    val challenge = state.challengeState
+    val nextChallenge =
+      challenge.copy(
+        hardcorePurrs = (challenge.hardcorePurrs + hardcorePurrs).coerceAtLeast(0L),
+        gems = (challenge.gems + gems).coerceAtLeast(0L),
+        totalGemsEarned = (challenge.totalGemsEarned + gems).coerceAtLeast(0L),
+        gatoShards = (challenge.gatoShards + shards).coerceAtLeast(0L),
+      )
+    saveChallengeAndRefresh(nextChallenge)
+    if (passXp > 0L) {
+      grantPassXpImmediate(passXp)
+    }
+    if (purrs > 0L) {
+      applyAndSaveImmediate(
+        current.copy(
+          purrs = current.purrs + purrs,
+          totalPurrsEarned = current.totalPurrsEarned + purrs,
+        )
+      )
+    }
+    _toastEvents.tryEmit("Admin currency grant applied!")
+  }
+
+  fun adminSetWeather(condition: WeatherConditionKind) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val newWeather =
+      LiveWeatherState(
+        cityName = "Sanctuary Sky",
+        temperatureC =
+          Random.nextInt(condition.tempRangeC.first, condition.tempRangeC.last + 1).toDouble(),
+        condition = condition,
+        nextShiftSeconds = WeatherRepository.WEATHER_INTERVAL_SECONDS,
+        weatherShiftCount = state.weather.weatherShiftCount + 1L,
+      )
+    secondsUntilNextWeather = WeatherRepository.WEATHER_INTERVAL_SECONDS
+    _uiState.update { it.copy(weather = newWeather) }
+    applyProfile(_uiState.value.profile, isLoaded = true)
+    _toastEvents.tryEmit("Admin Weather set to ${condition.label}!")
+  }
+
+  fun adminModeratePlayer(
+    targetUserId: String,
+    status: String,
+    reason: String,
+    timeoutMinutes: Long,
+  ) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val repo = repository ?: return
+    val adminEmail = currentUserEmail?.trim().orEmpty().ifBlank { GameCatalog.ADMIN_EMAIL }
+    val until =
+      if (status == "TIMED_OUT" && timeoutMinutes > 0L) {
+        System.currentTimeMillis() + (timeoutMinutes * 60_000L)
+      } else {
+        0L
+      }
+    viewModelScope.launch {
+      runCatching {
+        repo.setPlayerModeration(
+          targetUserId = targetUserId.trim(),
+          status = status,
+          reason = reason,
+          timeoutUntilMillis = until,
+          incrementWarning = status == "WARNED" || status == "TIMED_OUT",
+          adminEmail = adminEmail,
+        )
+      }.onSuccess {
+        _toastEvents.tryEmit("Applied $status to $targetUserId")
+      }.onFailure { e ->
+        _toastEvents.tryEmit("Moderation failed: ${e.message}")
+      }
+    }
+  }
+
+  fun adminClearModeration(targetUserId: String) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val repo = repository ?: return
+    viewModelScope.launch {
+      runCatching { repo.clearPlayerModeration(targetUserId.trim()) }
+        .onSuccess { _toastEvents.tryEmit("Cleared moderation for $targetUserId") }
+        .onFailure { e -> _toastEvents.tryEmit("Clear failed: ${e.message}") }
+    }
+  }
+
+  fun adminSendGlobalMessage(title: String, body: String, severity: String) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val repo = repository ?: return
+    val adminEmail = currentUserEmail?.trim().orEmpty().ifBlank { GameCatalog.ADMIN_EMAIL }
+    val messageId = "msg_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
+    viewModelScope.launch {
+      runCatching {
+        repo.sendGlobalAnnouncement(
+          messageId = messageId,
+          title = title,
+          body = body,
+          severity = severity,
+          senderEmail = adminEmail,
+        )
+      }.onSuccess {
+        _toastEvents.tryEmit("Global message broadcasted!")
+      }.onFailure { e ->
+        _toastEvents.tryEmit("Broadcast failed: ${e.message}")
+      }
+    }
+  }
+
+  fun adminDeleteGlobalMessage(messageId: String) {
+    val state = _uiState.value
+    if (!state.isAdmin) return
+    val repo = repository ?: return
+    viewModelScope.launch {
+      runCatching { repo.deleteGlobalAnnouncement(messageId) }
+        .onSuccess { _toastEvents.tryEmit("Deleted global announcement.") }
+        .onFailure { e -> _toastEvents.tryEmit("Delete failed: ${e.message}") }
+    }
+  }
+
+  fun deleteAllPlayerData(context: Context) {
+    val appCtx = context.applicationContext
+    soundManager.setSleepTimer(0)
+    isDirty = false
+    challengeDirty = false
+    statsDirty = false
+    passDirty = false
+    viewModelScope.launch {
+      val now = System.currentTimeMillis()
+      val freshSettings = AppSettingsState()
+      applySettingsToAudio(freshSettings)
+      localStorage.clearAllLocalData(appCtx)
+
+      val uid = currentUserId
+      val repo = repository
+      val freshProfile =
+        if (repo != null && uid != null) {
+          runCatching { repo.deleteUserCloudData(uid) }
+          runCatching { repo.ensureUserProfile(uid, initialDisplayName) }
+            .getOrElse { UserProfile(userId = uid, displayName = initialDisplayName) }
+        } else {
+          UserProfile(userId = "local_caretaker", displayName = initialDisplayName)
+        }
+
+      rolledNightEpochDay = -1L
+      isBloodmoonTonight = false
+      secondsUntilNextWeather = WeatherRepository.WEATHER_INTERVAL_SECONDS
+      val freshStats =
+        PlayerStatsState(
+          joinedTimestampMillis = now,
+          lastActiveTimestampMillis = now,
+          totalPlaySessions = 1L,
+        )
+      localStorage.savePlayerStats(freshStats)
+      val (freshChallenge, _, _) = ensureHourlyFestivalAndQuests(ChallengeProgressState(), now)
+      localStorage.saveChallengeProgress(freshChallenge)
+      val freshFestTier = GameCatalog.festivalTierFor(freshChallenge.festivalIsMega)
+      val (freshPass, _) = ensureHourlyPassQuests(BattlePassState(), now)
+      localStorage.saveBattlePassState(freshPass)
+      val freshWeather = weatherRepository.rollRandomWeather(previous = null, shiftCount = 1L)
+      val currentWeek = GameCatalog.currentEpochWeek(now)
+
+      _uiState.update { state ->
+        state.copy(
+          isLoading = false,
+          errorMessage = null,
+          profile = freshProfile,
+          weather = freshWeather,
+          settings = freshSettings,
+          challengeState = freshChallenge,
+          festivalTier = freshFestTier,
+          festivalRerollCountdownText = formatDuration(GameCatalog.millisUntilNextEpochHour(now)),
+          isTurkeyRushActive = GameCatalog.isTurkeySpawnWindowActive(now),
+          turkeyRushCountdownText = GameCatalog.turkeyRushStatusText(now),
+          hourlyFestivalQuests = GameCatalog.evaluateHourlyFestivalQuests(freshChallenge),
+          spawnedTurkeys = emptyList(),
+          playerStats = freshStats,
+          battlePassState = freshPass,
+          currentPassTier = 0,
+          currentVipPassTier = 0,
+          freePassStepProgress = 0L to GameCatalog.NOVEMBER_PASS_FREE_BASE_XP,
+          vipPassStepProgress = 0L to GameCatalog.NOVEMBER_PASS_VIP_BASE_XP,
+          hourlyPassQuests = GameCatalog.evaluateHourlyPassQuests(freshPass),
+          claimablePassQuestsCount = 0,
+          claimablePassCount = 0,
+          goldenRainActive = false,
+          goldenRainCountdownText = "",
+          goldenTouchProgressText = "0m 0s / 30m",
+          gemFrenzyActive = false,
+          gemFrenzyCountdownText = "",
+          gemCharmMultiplier = 1.0,
+          nextGemCharmCost = GameCatalog.gemCharmCost(0L),
+          vipRequirementUpgradeCount = 0L,
+          comboCharge = 0f,
+          comboMultiplier = 1.0,
+          canClaimDailyReward = true,
+          nextDailyDayIndex = 1,
+          nextDailyPayout = GameCatalog.computeEndlessDailyPayout(1L),
+          canClaimWeeklyReward = freshStats.lastWeeklyRewardWeekId < currentWeek,
+          currentPlayerGlobalRank = null,
+          pendingOfflineReport = null,
+          pendingWeeklyReward = null,
+          nextRebirthCost = GameCatalog.REBIRTH_BASE_COST,
+          rebirthMultiplier = 1.0,
+          hardcoreEligible = false,
+          vaultKeeperTapCount = 0,
+          vaultCooldownRemainingMillis = 0L,
+          vaultCooldownText = "",
+          dismissedAnnouncementId = "",
+          limitedExistCounts = remoteExistCounts,
+          particles = emptyList(),
+        )
+      }
+      applyProfile(freshProfile, isLoaded = true)
+      _toastEvents.tryEmit("All Sanctuary data wiped — Fresh start complete!")
+    }
+  }
+
+  private fun enforceModerationBlock(state: PurrGameUiState): Boolean {
+    if (state.isBanned) {
+      _toastEvents.tryEmit(
+        "Account Banned: ${state.activeModeration?.reason?.ifBlank { "Suspended by Admin" }}"
+      )
+      return true
+    }
+    if (state.isTimedOut) {
+      val rem =
+        ((state.activeModeration?.timeoutUntilMillis ?: 0L) - System.currentTimeMillis())
+          .coerceAtLeast(1000L)
+      _toastEvents.tryEmit(
+        "Timed Out (${formatDuration(rem)} left): ${state.activeModeration?.reason ?: "Wait before interacting"}"
+      )
+      return true
+    }
+    return false
+  }
+
+  private fun recordLimitedItemUnlock(itemType: String, itemId: String) {
+    val statId = GameCatalog.existStatId(itemType, itemId)
+    var updatedMap: Map<String, Long> = emptyMap()
+    _uiState.update { state ->
+      val nextVal = (state.limitedExistCounts[statId] ?: 0L) + 1L
+      val mutable = state.limitedExistCounts.toMutableMap()
+      mutable[statId] = nextVal
+      updatedMap = mutable.toMap()
+      state.copy(limitedExistCounts = updatedMap)
+    }
+    viewModelScope.launch {
+      runCatching { localStorage.saveLimitedExistCounts(updatedMap) }
+      val repo = repository
+      if (repo != null && currentUserId != null) {
+        runCatching { repo.incrementLimitedItemExistCount(statId, itemType) }
+          .onFailure { e -> Log.w(TAG, "Exist counter cloud increment skipped: ${e.message}") }
+      }
+    }
+  }
+
+  private fun ensureOwnedLimitedFloor(
+    counts: MutableMap<String, Long>,
+    patterns: List<String>,
+    accessories: List<String>,
+    themes: List<String>,
+    backgrounds: List<String> = emptyList(),
+  ) {
+    patterns.forEach { patId ->
+      if (GameCatalog.patterns.any { it.id == patId && it.isEventExclusive }) {
+        val k = GameCatalog.existStatId("PATTERN", patId)
+        counts[k] = maxOf(counts[k] ?: 0L, 1L)
+      }
+    }
+    accessories.forEach { accId ->
+      if (GameCatalog.accessories.any { it.id == accId && it.isEventExclusive }) {
+        val k = GameCatalog.existStatId("ACCESSORY", accId)
+        counts[k] = maxOf(counts[k] ?: 0L, 1L)
+      }
+    }
+    themes.forEach { thmId ->
+      if (AppColorTheme.entries.any { it.id == thmId && !it.isFree }) {
+        val k = GameCatalog.existStatId("THEME", thmId)
+        counts[k] = maxOf(counts[k] ?: 0L, 1L)
+      }
+    }
+    backgrounds.forEach { bgId ->
+      if (GameCatalog.backgrounds.any { it.id == bgId && it.isEventExclusive }) {
+        val k = GameCatalog.existStatId("BACKGROUND", bgId)
+        counts[k] = maxOf(counts[k] ?: 0L, 1L)
+      }
+    }
+  }
+
+  private fun mergeExistMaps(a: Map<String, Long>, b: Map<String, Long>): Map<String, Long> {
+    if (a.isEmpty()) return b
+    if (b.isEmpty()) return a
+    val merged = a.toMutableMap()
+    b.forEach { (k, v) ->
+      merged[k] = maxOf(merged[k] ?: 0L, v)
+    }
+    return merged
+  }
+
   private fun mergeLocalAndRemote(
     local: UserProfile,
     remote: UserProfile,
@@ -2418,7 +3820,11 @@ class PurrGameViewModel(
     displayName: String,
   ): UserProfile {
     if (local.totalPurrsEarned <= remote.totalPurrsEarned && local.totalPets <= remote.totalPets) {
-      return remote
+      return remote.copy(
+        bio = remote.bio.ifBlank { local.bio },
+        avatarBase64 = remote.avatarBase64.ifBlank { local.avatarBase64 },
+        bannerBase64 = remote.bannerBase64.ifBlank { local.bannerBase64 },
+      )
     }
     val mergedUpgrades =
       (remote.upgradeLevels.keys + local.upgradeLevels.keys).associateWith { key ->
@@ -2438,8 +3844,12 @@ class PurrGameViewModel(
       selectedAccessoryId =
         if (local.totalPets > remote.totalPets) local.selectedAccessoryId
         else remote.selectedAccessoryId,
+      selectedBackgroundId =
+        if (local.selectedBackgroundId != "cozy_parlor") local.selectedBackgroundId
+        else remote.selectedBackgroundId,
       unlockedPatterns = (remote.unlockedPatterns + local.unlockedPatterns).distinct(),
       unlockedAccessories = (remote.unlockedAccessories + local.unlockedAccessories).distinct(),
+      unlockedBackgrounds = (remote.unlockedBackgrounds + local.unlockedBackgrounds).distinct(),
       upgradeLevels = mergedUpgrades,
       dailyStreak = maxOf(remote.dailyStreak, local.dailyStreak),
       lastDailyClaimEpochDay = maxOf(remote.lastDailyClaimEpochDay, local.lastDailyClaimEpochDay),
@@ -2449,6 +3859,10 @@ class PurrGameViewModel(
       eventPurrsEarned = maxOf(remote.eventPurrsEarned, local.eventPurrsEarned),
       preferredCity = "Sanctuary Sky",
       weatherCheckedCount = maxOf(remote.weatherCheckedCount, local.weatherCheckedCount),
+      statsPublic = local.statsPublic,
+      bio = local.bio.ifBlank { remote.bio },
+      avatarBase64 = local.avatarBase64.ifBlank { remote.avatarBase64 },
+      bannerBase64 = local.bannerBase64.ifBlank { remote.bannerBase64 },
     )
   }
 
@@ -2460,20 +3874,33 @@ class PurrGameViewModel(
     comboMult: Double,
     challenge: ChallengeProgressState,
     goldenRainActive: Boolean = false,
+    festivalTier: FestivalTier = FestivalTier.REGULAR,
   ): Long {
     val activeUpgrades =
       if (challenge.isHardcoreMode) challenge.hardcoreUpgradeLevels else profile.upgradeLevels
-    val base = GameCatalog.computeClickPower(activeUpgrades)
+    val basePps = GameCatalog.computeBasePps(activeUpgrades)
+    val base =
+      GameCatalog.computeClickPower(activeUpgrades) +
+        if ("asc_click_supernova" in challenge.unlockedAscensionIds) {
+          (basePps * 0.06).roundToLong()
+        } else {
+          0L
+        }
     val rebirthMult =
       GameCatalog.rebirthMultiplier(challenge.rebirthBonusSteps, challenge.unlockedAscensionIds)
     val goldenMult =
-      if ("asc_golden_whiskers" in challenge.unlockedAscensionIds) 2.0 else 1.0
+      if ("asc_golden_whiskers" in challenge.unlockedAscensionIds) 1.5 else 1.0
+    val supernovaMult =
+      if ("asc_click_supernova" in challenge.unlockedAscensionIds) 1.5 else 1.0
+    val sovereignMult =
+      if ("asc_cosmic_sovereign" in challenge.unlockedAscensionIds) 1.25 else 1.0
     val harmonyBoost =
-      if ("asc_lunar_harmony" in challenge.unlockedAscensionIds) 1.5 else 1.0
+      if ("asc_lunar_harmony" in challenge.unlockedAscensionIds) 1.25 else 1.0
     val weatherHarmonyBoost =
-      harmonyBoost + (if (challenge.prismLensUnlocked) 0.20 else 0.0)
+      harmonyBoost + (if (challenge.prismLensUnlocked) 0.15 else 0.0)
     val weatherMult = 1.0 + ((weather.condition.clickMultiplier - 1.0) * weatherHarmonyBoost)
-    val eventMult = 1.0 + ((event.clickMultiplier - 1.0) * harmonyBoost)
+    val eventClickBase = maxOf(event.clickMultiplier, festivalTier.clickMultiplier)
+    val eventMult = 1.0 + ((eventClickBase - 1.0) * harmonyBoost)
     val moonMult = 1.0 + ((moonlightPhase.clickMultiplier - 1.0) * harmonyBoost)
     val goldenRainMult = if (goldenRainActive) GameCatalog.GOLDEN_RAIN_MULTIPLIER else 1.0
     val gemCharmMult = GameCatalog.gemCharmMultiplier(challenge.gemCharmLevel)
@@ -2491,6 +3918,8 @@ class PurrGameViewModel(
         gemFrenzyMult *
         rebirthMult *
         goldenMult *
+        supernovaMult *
+        sovereignMult *
         hardcoreMult)
       .roundToLong()
       .coerceAtLeast(1L)
@@ -2503,6 +3932,7 @@ class PurrGameViewModel(
     moonlightPhase: MoonlightPhase,
     challenge: ChallengeProgressState,
     goldenRainActive: Boolean = false,
+    festivalTier: FestivalTier = FestivalTier.REGULAR,
   ): Long {
     val activeUpgrades =
       if (challenge.isHardcoreMode) challenge.hardcoreUpgradeLevels else profile.upgradeLevels
@@ -2512,12 +3942,17 @@ class PurrGameViewModel(
       GameCatalog.rebirthMultiplier(challenge.rebirthBonusSteps, challenge.unlockedAscensionIds)
     val goldenMult =
       if ("asc_golden_whiskers" in challenge.unlockedAscensionIds) 2.0 else 1.0
+    val symphonyMult =
+      if ("asc_passive_symphony" in challenge.unlockedAscensionIds) 2.0 else 1.0
+    val sovereignMult =
+      if ("asc_cosmic_sovereign" in challenge.unlockedAscensionIds) 1.5 else 1.0
     val harmonyBoost =
       if ("asc_lunar_harmony" in challenge.unlockedAscensionIds) 1.5 else 1.0
     val weatherHarmonyBoost =
       harmonyBoost + (if (challenge.prismLensUnlocked) 0.20 else 0.0)
     val weatherMult = 1.0 + ((weather.condition.ppsMultiplier - 1.0) * weatherHarmonyBoost)
-    val eventMult = 1.0 + ((event.ppsMultiplier - 1.0) * harmonyBoost)
+    val eventPpsBase = maxOf(event.ppsMultiplier, festivalTier.ppsMultiplier)
+    val eventMult = 1.0 + ((eventPpsBase - 1.0) * harmonyBoost)
     val moonMult = 1.0 + ((moonlightPhase.ppsMultiplier - 1.0) * harmonyBoost)
     val goldenRainMult = if (goldenRainActive) GameCatalog.GOLDEN_RAIN_MULTIPLIER else 1.0
     val gemCharmMult = GameCatalog.gemCharmMultiplier(challenge.gemCharmLevel)
@@ -2534,6 +3969,8 @@ class PurrGameViewModel(
         gemFrenzyMult *
         rebirthMult *
         goldenMult *
+        symphonyMult *
+        sovereignMult *
         hardcoreMult)
       .roundToLong()
       .coerceAtLeast(1L)

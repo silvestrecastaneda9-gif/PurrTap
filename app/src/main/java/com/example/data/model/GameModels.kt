@@ -22,8 +22,10 @@ data class UserProfile(
   val selectedCatName: String = "Mochi",
   val selectedPatternId: String = "tabby",
   val selectedAccessoryId: String = "none",
+  val selectedBackgroundId: String = "cozy_parlor",
   val unlockedPatterns: List<String> = listOf("tabby"),
   val unlockedAccessories: List<String> = listOf("none"),
+  val unlockedBackgrounds: List<String> = listOf("cozy_parlor"),
   val upgradeLevels: Map<String, Long> = emptyMap(),
   val dailyStreak: Long = 0L,
   val lastDailyClaimEpochDay: Long = 0L,
@@ -33,8 +35,25 @@ data class UserProfile(
   val eventPurrsEarned: Long = 0L,
   val preferredCity: String = "Sanctuary Sky",
   val weatherCheckedCount: Long = 0L,
+  val statsPublic: Boolean = true,
+  val bio: String = "",
+  val avatarBase64: String = "",
+  val bannerBase64: String = "",
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
+)
+
+data class CatBackgroundDef(
+  val id: String,
+  val name: String,
+  val description: String,
+  val cost: Long,
+  val primaryHex: Long,
+  val secondaryHex: Long,
+  val accentHex: Long,
+  val isEventExclusive: Boolean = false,
+  val turkeyCost: Long = 0L,
+  val eventGroup: String? = null,
 )
 
 @IgnoreExtraProperties
@@ -49,6 +68,53 @@ data class LeaderboardEntry(
   val totalPurrsEarned: Long = 0L,
   val totalPets: Long = 0L,
   val badgesCount: Long = 0L,
+  val statsPublic: Boolean = true,
+  val bio: String = "",
+  val avatarBase64: String = "",
+  val bannerBase64: String = "",
+  val publicRebirths: Long = 0L,
+  val publicAscensions: Long = 0L,
+  val publicDailyStreak: Long = 0L,
+  val publicHighestComboX100: Long = 100L,
+  @ServerTimestamp val updatedAt: Timestamp? = null,
+)
+
+data class LeaderboardPublicStats(
+  val rebirths: Long = 0L,
+  val ascensions: Long = 0L,
+  val dailyStreak: Long = 0L,
+  val highestComboX100: Long = 100L,
+)
+
+@IgnoreExtraProperties
+data class ModerationRecord(
+  @DocumentId val id: String = "",
+  val userId: String = "",
+  val status: String = "ACTIVE", // ACTIVE, WARNED, TIMED_OUT, BANNED
+  val reason: String = "",
+  val timeoutUntilMillis: Long = 0L,
+  val warningCount: Long = 0L,
+  val updatedByEmail: String = "",
+  @ServerTimestamp val updatedAt: Timestamp? = null,
+)
+
+@IgnoreExtraProperties
+data class GlobalAnnouncement(
+  @DocumentId val id: String = "",
+  val messageId: String = "",
+  val title: String = "",
+  val body: String = "",
+  val severity: String = "INFO", // INFO, EVENT, WARNING
+  val senderEmail: String = "",
+  @ServerTimestamp val createdAt: Timestamp? = null,
+)
+
+@IgnoreExtraProperties
+data class LimitedItemCounter(
+  @DocumentId val id: String = "",
+  val itemId: String = "",
+  val itemType: String = "PATTERN", // PATTERN, ACCESSORY, THEME
+  val existCount: Long = 0L,
   @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
@@ -77,6 +143,7 @@ data class CatPatternDef(
   val description: String,
   val cost: Long,
   val gemCost: Long = 0L,
+  val turkeyCost: Long = 0L,
   val isEventExclusive: Boolean = false,
   val unlockSourceLabel: String? = null,
 )
@@ -87,6 +154,7 @@ data class CatAccessoryDef(
   val description: String,
   val cost: Long,
   val gemCost: Long = 0L,
+  val turkeyCost: Long = 0L,
   val isEventExclusive: Boolean = false,
   val unlockSourceLabel: String? = null,
 )
@@ -207,6 +275,23 @@ data class ChallengeProgressState(
   val gemFrenzyRemainingMillis: Long = 0L,
   val hackerVaultUnlocked: Boolean = false,
   val vaultKickoutUntilMillis: Long = 0L,
+  val dogCrashOmenSeen: Boolean = false,
+  val trillionCutsceneSeen: Boolean = false,
+  val citadelBossGlitchSeen: Boolean = false,
+  val catComputerUnlocked: Boolean = false,
+  val dogComputerSearched: Boolean = false,
+  val turkeys: Long = 0L,
+  val totalTurkeysEarned: Long = 0L,
+  val festivalHourEpoch: Long = 0L,
+  val festivalIsMega: Boolean = false,
+  val turkeyGatoTalkCount: Int = 0,
+  val part2MapUnlocked: Boolean = false,
+  val festivalQuestHourEpoch: Long = 0L,
+  val claimedFestivalQuestIds: List<String> = emptyList(),
+  val festHourPets: Long = 0L,
+  val festHourTurkeysTapped: Long = 0L,
+  val festHourUpgradesBought: Long = 0L,
+  val festHourWeatherShifts: Long = 0L,
 )
 
 data class PlayerStatsState(
@@ -334,10 +419,27 @@ data class ActiveBattlePassQuest(
     get() = progress >= template.target
 }
 
+enum class NavigationLayoutFormat(
+  val id: String,
+  val label: String,
+  val subtitle: String,
+) {
+  BOTTOM_BAR("bottom_bar", "Bottom", "Classic bottom navigation bar"),
+  SIDE_RAIL("side_rail", "Side Rail", "Vertical bar along the left edge"),
+  CLEAN_FLOATING("clean_floating", "Clean Dock", "Compact floating pill bar");
+
+  companion object {
+    fun fromId(id: String): NavigationLayoutFormat {
+      return entries.find { it.id == id } ?: BOTTOM_BAR
+    }
+  }
+}
+
 data class BattlePassState(
   val seasonId: String = "november_pass",
   val passXp: Long = 0L,
   val vipUnlocked: Boolean = false,
+  val passCompletions: Long = 0L,
   val claimedFreeTiers: List<Int> = emptyList(),
   val claimedVipTiers: List<Int> = emptyList(),
   val goldenTouchEquippedMillis: Long = 0L,
@@ -351,6 +453,145 @@ data class BattlePassState(
   val hourWeatherShifts: Long = 0L,
   val hourComboCrits: Long = 0L,
 )
+
+enum class FestivalTier(
+  val id: String,
+  val label: String,
+  val shortBadge: String,
+  val boostLabel: String,
+  val clickMultiplier: Double,
+  val ppsMultiplier: Double,
+  val turkeySpawnChancePercent: Int,
+) {
+  REGULAR(
+    id = "regular",
+    label = "Thanksgiving Part 2 Festival",
+    shortBadge = "PART 2 LIVE",
+    boostLabel = "1.75x Purrs • 25% Turkey/10s • Golden Gobblers",
+    clickMultiplier = 1.75,
+    ppsMultiplier = 1.75,
+    turkeySpawnChancePercent = 25,
+  ),
+  MEGA(
+    id = "mega",
+    label = "MEGA Gravy Rush Festival!",
+    shortBadge = "33% GRAVY RUSH!",
+    boostLabel = "3.0x Gravy Rush • 45% Turkey/10s • +3 Gobblers",
+    clickMultiplier = 3.0,
+    ppsMultiplier = 3.0,
+    turkeySpawnChancePercent = 45,
+  ),
+}
+
+enum class FestivalQuestKind {
+  PETS,
+  TURKEYS_TAPPED,
+  UPGRADES,
+  WEATHER_SHIFTS,
+}
+
+data class FestivalQuestTemplate(
+  val id: String,
+  val title: String,
+  val description: String,
+  val kind: FestivalQuestKind,
+  val target: Long,
+  val turkeyReward: Long,
+)
+
+data class ActiveFestivalQuest(
+  val template: FestivalQuestTemplate,
+  val progress: Long,
+  val isClaimed: Boolean,
+) {
+  val isCompleted: Boolean
+    get() = progress >= template.target
+}
+
+enum class FeastZoneActivityType {
+  MINIGAME_CRANBERRY,
+  MINIGAME_BAKERY,
+  FISHING,
+  COOKING,
+  BOSS_BATTLE,
+}
+
+data class Part2MapLandmark(
+  val id: String,
+  val title: String,
+  val subtitle: String,
+  val xFraction: Float,
+  val yFraction: Float,
+  val previewDetail: String,
+  val activityType: FeastZoneActivityType,
+  val actionLabel: String,
+  val rewardSummary: String,
+)
+
+enum class InventoryEventGroup(
+  val sortOrder: Int,
+  val title: String,
+  val badgeLabel: String,
+  val subtitle: String,
+) {
+  THANKSGIVING_PART_1(
+    sortOrder = 0,
+    title = "Thanksgiving Event (Part 1 & 2)",
+    badgeLabel = "PART 2 LIVE • TURKEYS",
+    subtitle = "Feast gear bought exclusively with wild & quest Turkeys.",
+  ),
+  SOLSTICE_OMEN(
+    sortOrder = 1,
+    title = "December 1st Glitch Omen",
+    badgeLabel = "BOSS TEASER • LIMITED",
+    subtitle = "Relics thawed from Cornucopia Citadel's frozen anomaly.",
+  ),
+  NOVEMBER_PASS(
+    sortOrder = 2,
+    title = "November Pass (Season 1)",
+    badgeLabel = "BATTLE PASS",
+    subtitle = "Rewards earned along the 30-tier Free & VIP Pass tracks.",
+  ),
+  GEM_VAULT(
+    sortOrder = 3,
+    title = "Gem Vault Relics",
+    badgeLabel = "RARE GEMS",
+    subtitle = "Luxury collectibles forged in Shop → Gems.",
+  ),
+  DAILY_STREAKS(
+    sortOrder = 4,
+    title = "Daily Check-In Streaks",
+    badgeLabel = "CHECK-IN PRIZES",
+    subtitle = "Milestone gifts from your Endless Daily Streak.",
+  ),
+  STARLIGHT_CATNIP(
+    sortOrder = 5,
+    title = "Starlight Catnip Event (Retired)",
+    badgeLabel = "ARCHIVE",
+    subtitle = "Legacy items preserved from the concluded Starlight Festival.",
+  ),
+  SECRET_VAULT(
+    sortOrder = 6,
+    title = "Secret Code Vault",
+    badgeLabel = "CLASSIFIED",
+    subtitle = "Glitched anomaly gear from the Dog Vault Keeper.",
+  );
+
+  companion object {
+    fun fromSourceLabel(label: String?): InventoryEventGroup {
+      return when {
+        label == "Thanksgiving Part 1" || label == "Thanksgiving Part 2" -> THANKSGIVING_PART_1
+        label == "December 1st Teaser" -> SOLSTICE_OMEN
+        label == "November Pass" || label == "November Pass VIP" -> NOVEMBER_PASS
+        label == "Gem Vault" -> GEM_VAULT
+        label?.startsWith("Day ") == true -> DAILY_STREAKS
+        label == "Limited Event" -> STARLIGHT_CATNIP
+        label == "Secret Code Vault" -> SECRET_VAULT
+        else -> STARLIGHT_CATNIP
+      }
+    }
+  }
+}
 
 object GameCatalog {
   val upgrades: List<ShopUpgradeDef> =
@@ -511,6 +752,62 @@ object GameCatalog {
         costMultiplier = 1.75,
         powerPerLevel = 165_000L,
       ),
+      // Late-game Click Upgrades (Billions -> Trillions)
+      ShopUpgradeDef(
+        id = "celestial_paw_gauntlet",
+        name = "Celestial Paw Gauntlet",
+        description = "Channels starlight directly into every single pet.",
+        category = UpgradeCategory.CLICK,
+        baseCost = 2_500_000_000L,
+        costMultiplier = 1.72,
+        powerPerLevel = 450_000L,
+      ),
+      ShopUpgradeDef(
+        id = "quantum_scratch_matrix",
+        name = "Quantum Scratch Matrix",
+        description = "Pets your cat across 9 parallel dimensions at once.",
+        category = UpgradeCategory.CLICK,
+        baseCost = 35_000_000_000L,
+        costMultiplier = 1.75,
+        powerPerLevel = 3_800_000L,
+      ),
+      ShopUpgradeDef(
+        id = "royal_miga_scepter",
+        name = "Royal Scepter of Miga",
+        description = "An ancient relic radiating trillion-tier petting power.",
+        category = UpgradeCategory.CLICK,
+        baseCost = 500_000_000_000L,
+        costMultiplier = 1.78,
+        powerPerLevel = 32_000_000L,
+      ),
+      // Late-game PPS Upgrades (Billions -> Trillions)
+      ShopUpgradeDef(
+        id = "nebula_cat_tower",
+        name = "Nebula Spire Cat Tower",
+        description = "A zero-gravity scratching post orbiting the Milky Way.",
+        category = UpgradeCategory.PER_SECOND,
+        baseCost = 2_200_000_000L,
+        costMultiplier = 1.76,
+        powerPerLevel = 780_000L,
+      ),
+      ShopUpgradeDef(
+        id = "astral_purr_reactor",
+        name = "Astral Purr Reactor",
+        description = "Converts pure feline contentment into infinite cosmic purrs.",
+        category = UpgradeCategory.PER_SECOND,
+        baseCost = 28_000_000_000L,
+        costMultiplier = 1.78,
+        powerPerLevel = 6_400_000L,
+      ),
+      ShopUpgradeDef(
+        id = "imperial_sanctuary_citadel",
+        name = "Imperial Sanctuary Citadel",
+        description = "A golden palace built to honor the realm's greatest cats.",
+        category = UpgradeCategory.PER_SECOND,
+        baseCost = 420_000_000_000L,
+        costMultiplier = 1.80,
+        powerPerLevel = 55_000_000L,
+      ),
     )
 
   val patterns: List<CatPatternDef> =
@@ -594,6 +891,53 @@ object GameCatalog {
         gemCost = 20L,
         isEventExclusive = true,
         unlockSourceLabel = "Gem Vault",
+      ),
+      // Thanksgiving Event Part One (Turkey Currency Only)
+      CatPatternDef(
+        id = "pumpkin_pie_tabby",
+        name = "Pumpkin Pie Tabby",
+        description = "Spiced pumpkin stripes with whipped cream paws — Thanksgiving Part 1 exclusive!",
+        cost = 0L,
+        turkeyCost = 5L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      CatPatternDef(
+        id = "cranberry_calico",
+        name = "Cranberry Harvest",
+        description = "Deep cranberry, toasted pecan & maple gold patches — Thanksgiving Part 1 exclusive!",
+        cost = 0L,
+        turkeyCost = 12L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      CatPatternDef(
+        id = "pilgrim_pheasant",
+        name = "Plumage Pheasant",
+        description = "Shimmering bronze & crimson-plumed harvest fur — Thanksgiving Part 1 grand coat!",
+        cost = 0L,
+        turkeyCost = 25L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      // Thanksgiving Event Part Two (Mythic Feast Coats — Turkey Currency Only)
+      CatPatternDef(
+        id = "roasted_crown_calico",
+        name = "Roasted Crown Calico",
+        description = "Mythic Part 2 calico with toasted chestnut crests & champagne banquet rosettes!",
+        cost = 0L,
+        turkeyCost = 28L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 2",
+      ),
+      CatPatternDef(
+        id = "velvet_gravy_tabby",
+        name = "Velvet Gravy Tabby",
+        description = "Mythic Part 2 amber-velvet coat gleaming with molten Golden Gravy Falls swirls!",
+        cost = 0L,
+        turkeyCost = 36L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 2",
       ),
     )
 
@@ -679,6 +1023,62 @@ object GameCatalog {
         isEventExclusive = true,
         unlockSourceLabel = "Gem Vault",
       ),
+      // Thanksgiving Event Part One (Turkey Currency Only)
+      CatAccessoryDef(
+        id = "pilgrim_hat",
+        name = "Harvest Pilgrim Hat",
+        description = "Buckled charcoal-felt hat worn by festive Thanksgiving caretakers!",
+        cost = 0L,
+        turkeyCost = 4L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      CatAccessoryDef(
+        id = "cranberry_scarf",
+        name = "Autumn Leaf Scarf",
+        description = "Hand-knitted cranberry wool scarf pinned with a crisp maple leaf.",
+        cost = 0L,
+        turkeyCost = 9L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      CatAccessoryDef(
+        id = "turkey_plush",
+        name = "Golden Turkey Plush",
+        description = "Festive roasted-gold turkey companion perched beside your collar!",
+        cost = 0L,
+        turkeyCost = 18L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 1",
+      ),
+      // Thanksgiving Event Part Two Accessories
+      CatAccessoryDef(
+        id = "cornucopia_horn",
+        name = "Cornucopia Horn",
+        description = "Braided golden harvest horn overflowing with cranberries & wheat — Part 2 exclusive!",
+        cost = 0L,
+        turkeyCost = 14L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 2",
+      ),
+      CatAccessoryDef(
+        id = "gravy_ladle",
+        name = "Golden Gravy Scepter",
+        description = "Royal amber ladle brimming with 3.0x Gravy Rush sparkle from Part 2 Banquet!",
+        cost = 0L,
+        turkeyCost = 22L,
+        isEventExclusive = true,
+        unlockSourceLabel = "Thanksgiving Part 2",
+      ),
+      // December 1st Boss Glitch Limited-Time Reward
+      CatAccessoryDef(
+        id = "melted_solstice_crown",
+        name = "Melting Solstice Crown",
+        description = "Crystalline frost crown slowly thawing toward December 1st — recovered after glitching out Mecha-Gobbler Prime!",
+        cost = 0L,
+        isEventExclusive = true,
+        unlockSourceLabel = "December 1st Teaser",
+      ),
     )
 
   val eventExclusivePatterns: List<CatPatternDef>
@@ -686,6 +1086,12 @@ object GameCatalog {
 
   val eventExclusiveAccessories: List<CatAccessoryDef>
     get() = accessories.filter { it.isEventExclusive && it.cost > 0L }
+
+  val turkeyEventPatterns: List<CatPatternDef>
+    get() = patterns.filter { it.turkeyCost > 0L }
+
+  val turkeyEventAccessories: List<CatAccessoryDef>
+    get() = accessories.filter { it.turkeyCost > 0L }
 
   val badges: List<BadgeDef> =
     listOf(
@@ -713,6 +1119,8 @@ object GameCatalog {
       BadgeDef("offline_dreamer", "Catnap Earner", "Accumulated 1 hour of Offline Sanctuary time.", "Uncommon"),
       BadgeDef("frenzy_acrobat", "Hyper Purr Acrobat", "Reached a 2.00x Petting Frenzy Combo.", "Rare"),
       BadgeDef("vault_hacker", "Vault Intruder", "Angered the Dog Vault Keeper inside the Secret Code Vault.", "Mythic"),
+      BadgeDef("royal_miga_decree", "Miga's Royal Decree", "Reached 1 Trillion Purrs, met Miga the Great, and witnessed the Red Eyes.", "Royal"),
+      BadgeDef("part2_feast_sovereign", "Cornucopia Sovereign", "Collected 15 lifetime Turkeys during the Thanksgiving Part Two Feast.", "Mythic"),
     )
 
   val quests: List<QuestDef> =
@@ -723,7 +1131,7 @@ object GameCatalog {
         description = "Pet your cat 100 times.",
         target = 100L,
         rewardPurrs = 120L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "first_purr",
         progressExtractor = { p, _, _ -> p.totalPets },
       ),
@@ -733,7 +1141,7 @@ object GameCatalog {
         description = "Reach 2,500 lifetime pets.",
         target = 2_500L,
         rewardPurrs = 1_500L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "combo_whisperer",
         progressExtractor = { p, _, _ -> p.totalPets },
       ),
@@ -743,7 +1151,7 @@ object GameCatalog {
         description = "Reach 15,000 lifetime pets.",
         target = 15_000L,
         rewardPurrs = 25_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "golden_paw",
         progressExtractor = { p, _, _ -> p.totalPets },
       ),
@@ -753,7 +1161,7 @@ object GameCatalog {
         description = "Reach 100,000 lifetime pets.",
         target = 100_000L,
         rewardPurrs = 750_000L,
-        rewardGems = 3L,
+        rewardGems = 2L,
         badgeId = "whisker_deity",
         progressExtractor = { p, _, _ -> p.totalPets },
       ),
@@ -763,7 +1171,7 @@ object GameCatalog {
         description = "Own 25 combined shop upgrade levels.",
         target = 25L,
         rewardPurrs = 1_200L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "shop_tycoon",
         progressExtractor = { p, _, _ -> p.upgradeLevels.values.sum() },
       ),
@@ -773,7 +1181,7 @@ object GameCatalog {
         description = "Own 75 combined shop upgrade levels.",
         target = 75L,
         rewardPurrs = 40_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "purr_tycoon",
         progressExtractor = { p, _, _ -> p.upgradeLevels.values.sum() },
       ),
@@ -783,7 +1191,7 @@ object GameCatalog {
         description = "Unlock 5 patterns or accessories beyond defaults.",
         target = 5L,
         rewardPurrs = 3_500L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "fashionista",
         progressExtractor = { p, _, _ ->
           ((p.unlockedPatterns.size - 1).coerceAtLeast(0) +
@@ -796,7 +1204,7 @@ object GameCatalog {
         description = "Witness 5 random Sanctuary Weather shifts.",
         target = 5L,
         rewardPurrs = 800L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "weather_watcher",
         progressExtractor = { p, _, _ -> p.weatherCheckedCount },
       ),
@@ -806,7 +1214,7 @@ object GameCatalog {
         description = "Witness 25 Sanctuary Weather shifts.",
         target = 25L,
         rewardPurrs = 30_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "storm_whisperer",
         progressExtractor = { p, _, _ -> p.weatherCheckedCount },
       ),
@@ -816,7 +1224,7 @@ object GameCatalog {
         description = "Build a 5-day Daily Rewards streak.",
         target = 5L,
         rewardPurrs = 4_500L,
-        rewardGems = 1L,
+        rewardGems = 0L,
         badgeId = "streak_master",
         progressExtractor = { p, _, stats -> maxOf(p.dailyStreak, stats.longestDailyStreak) },
       ),
@@ -826,7 +1234,7 @@ object GameCatalog {
         description = "Reach a 14-day Daily Rewards streak.",
         target = 14L,
         rewardPurrs = 15_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "fortnight_guardian",
         progressExtractor = { p, _, stats -> maxOf(p.dailyStreak, stats.longestDailyStreak) },
       ),
@@ -836,17 +1244,17 @@ object GameCatalog {
         description = "Reach a 30-day Endless Daily Rewards streak.",
         target = 30L,
         rewardPurrs = 120_000L,
-        rewardGems = 3L,
+        rewardGems = 2L,
         badgeId = "eternal_caretaker",
         progressExtractor = { p, _, stats -> maxOf(p.dailyStreak, stats.longestDailyStreak) },
       ),
       QuestDef(
         id = "q_event_2500",
-        title = "Starlight Celebrant",
+        title = "Festival Celebrant",
         description = "Earn 50,000 Purrs during Limited-Time Events.",
         target = 50_000L,
         rewardPurrs = 15_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "event_champion",
         progressExtractor = { p, _, _ -> p.eventPurrsEarned },
       ),
@@ -856,7 +1264,7 @@ object GameCatalog {
         description = "Perform your first Rebirth.",
         target = 1L,
         rewardPurrs = 50_000L,
-        rewardGems = 3L,
+        rewardGems = 1L,
         badgeId = "phoenix_kitten",
         progressExtractor = { _, ch, _ -> ch.rebirthCount },
       ),
@@ -866,7 +1274,7 @@ object GameCatalog {
         description = "Complete a Gato Ascensión.",
         target = 1L,
         rewardPurrs = 500_000L,
-        rewardGems = 5L,
+        rewardGems = 2L,
         badgeId = "astral_gato",
         progressExtractor = { _, ch, _ -> ch.ascensionCount },
       ),
@@ -876,7 +1284,7 @@ object GameCatalog {
         description = "Earn 1,000,000 lifetime Purrs.",
         target = 1_000_000L,
         rewardPurrs = 150_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "celestial_sovereign",
         progressExtractor = { p, _, _ -> p.totalPurrsEarned },
       ),
@@ -886,7 +1294,7 @@ object GameCatalog {
         description = "Earn 50,000,000 lifetime Purrs.",
         target = 50_000_000L,
         rewardPurrs = 2_500_000L,
-        rewardGems = 3L,
+        rewardGems = 2L,
         badgeId = "eternal_whisperer",
         progressExtractor = { p, _, _ -> p.totalPurrsEarned },
       ),
@@ -896,7 +1304,7 @@ object GameCatalog {
         description = "Earn 1,000,000,000 lifetime Purrs.",
         target = 1_000_000_000L,
         rewardPurrs = 25_000_000L,
-        rewardGems = 5L,
+        rewardGems = 3L,
         badgeId = "galaxy_purr_emperor",
         progressExtractor = { p, _, _ -> p.totalPurrsEarned },
       ),
@@ -906,7 +1314,7 @@ object GameCatalog {
         description = "Collect 10 Rare Sanctuary Gems.",
         target = 10L,
         rewardPurrs = 35_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "gem_collector",
         progressExtractor = { _, ch, _ -> ch.totalGemsEarned },
       ),
@@ -916,7 +1324,7 @@ object GameCatalog {
         description = "Unlock 3 nodes in the Gato Ascension Tree.",
         target = 3L,
         rewardPurrs = 1_500_000L,
-        rewardGems = 4L,
+        rewardGems = 2L,
         badgeId = "ascension_scholar",
         progressExtractor = { _, ch, _ -> ch.unlockedAscensionIds.size.toLong() },
       ),
@@ -926,7 +1334,7 @@ object GameCatalog {
         description = "Perform 5 Sanctuary Rebirths.",
         target = 5L,
         rewardPurrs = 750_000L,
-        rewardGems = 4L,
+        rewardGems = 2L,
         badgeId = "rebirth_veteran",
         progressExtractor = { _, ch, _ -> ch.rebirthCount },
       ),
@@ -936,7 +1344,7 @@ object GameCatalog {
         description = "Accumulate 1 hour (3,600s) of Offline earnings time.",
         target = 3_600L,
         rewardPurrs = 18_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "offline_dreamer",
         progressExtractor = { _, _, stats -> stats.totalOfflineSeconds },
       ),
@@ -946,7 +1354,7 @@ object GameCatalog {
         description = "Reach a 2.00x Petting Frenzy Combo multiplier.",
         target = 1L,
         rewardPurrs = 8_000L,
-        rewardGems = 2L,
+        rewardGems = 1L,
         badgeId = "frenzy_acrobat",
         progressExtractor = { _, _, stats -> if (stats.highestComboMultiplier >= 2.0) 1L else 0L },
       ),
@@ -956,9 +1364,19 @@ object GameCatalog {
         description = "Bother the Dog Vault Keeper in Settings' Secret Vault until kicked out.",
         target = 1L,
         rewardPurrs = 50_000L,
-        rewardGems = 5L,
+        rewardGems = 2L,
         badgeId = "vault_hacker",
         progressExtractor = { _, ch, _ -> if (ch.hackerVaultUnlocked) 1L else 0L },
+      ),
+      QuestDef(
+        id = "q_part2_feast",
+        title = "Cornucopia Citadel Sovereign",
+        description = "Earn 15 lifetime Turkeys (including +3 Golden Gobblers) in Thanksgiving Part 2.",
+        target = 15L,
+        rewardPurrs = 125_000L,
+        rewardGems = 2L,
+        badgeId = "part2_feast_sovereign",
+        progressExtractor = { _, ch, _ -> ch.totalTurkeysEarned },
       ),
     )
 
@@ -1039,41 +1457,207 @@ object GameCatalog {
   val periodicEvents: List<LimitedEventDef> =
     listOf(
       LimitedEventDef(
-        id = "starlight_festival",
-        title = "Starlight Catnip Festival",
-        subtitle = "Paper lanterns glow across the sanctuary until Nov 18!",
-        boostLabel = "1.35x Click & 1.35x Auto-Purr",
-        clickMultiplier = 1.35,
-        ppsMultiplier = 1.35,
-        milestoneGoal = 50_000L,
-        milestoneRewardPurrs = 2_000L,
-        badgeId = "event_champion",
-      ),
-      LimitedEventDef(
-        id = "thanksgiving_harvest",
-        title = "Thanksgiving Harvest Purrfest",
-        subtitle = "Autumn pies & golden leaves supercharge cozy sanctuary purrs!",
-        boostLabel = "2.0x Click & 2.0x Auto-Purr",
-        clickMultiplier = 2.0,
-        ppsMultiplier = 2.0,
-        milestoneGoal = 75_000L,
-        milestoneRewardPurrs = 5_000L,
+        id = "thanksgiving_part_2",
+        title = "Thanksgiving Event: Part Two",
+        subtitle = "Part 2 IS LIVE! Catch +3 Golden Gobblers, ride 3.0x Gravy Rush & unlock Mythic Banquet gear!",
+        boostLabel = "1.75x–3.0x Gravy Rush • +3 Golden Gobblers",
+        clickMultiplier = 1.75,
+        ppsMultiplier = 1.75,
+        milestoneGoal = 150_000L,
+        milestoneRewardPurrs = 12_000L,
         badgeId = "event_champion",
       ),
     )
 
   val thanksgivingSneakPeek =
     EventSneakPeekDef(
-      title = "Thanksgiving Harvest Purrfest",
-      dateWindow = "Starts Nov 19 • Right after Starlight Festival",
-      summary = "Get ready for a cozy autumn feast right after the current event ends on November 18th!",
+      title = "Thanksgiving Event: Part Two",
+      dateWindow = "NOW LIVE!",
+      summary = "Thanksgiving Part Two has arrived! Catch shimmering +3 Golden Gobblers during each hourly 5-minute rush, surge with 3.0x MEGA Gravy Rush, and unlock Cornucopia Citadel & Mythic Banquet coats!",
       previewHighlights =
         listOf(
-          "Harvest Feast 2.0x Click & 2.0x Auto-Purr global boost",
-          "Sneak Peek Skin: Pumpkin Pie Tabby & Harvest Pilgrim Hat",
-          "Autumn Cranberry Color Theme & Cornucopia Charm",
+          "Golden Gobblers (+3 Turkeys) & 3.0x MEGA Gravy Rush",
+          "Mythic Coats: Roasted Crown Calico & Velvet Gravy Tabby",
+          "Part 2 Gear, Cornucopia Citadel & Gravy Falls Rooms + Sovereign Badge!",
         ),
     )
+
+  const val FESTIVAL_SPAWN_INTERVAL_SECONDS = 10
+  const val TURKEY_SPAWN_WINDOW_MS = 5L * 60L * 1000L
+  const val TURKEY_SPAWN_CHANCE_REGULAR_PERCENT = 25
+  const val TURKEY_SPAWN_CHANCE_MEGA_PERCENT = 45
+  const val MEGA_FESTIVAL_CHANCE_PERCENT = 33
+  const val GOLDEN_GOBBLER_CHANCE_REGULAR_PERCENT = 25
+  const val GOLDEN_GOBBLER_CHANCE_MEGA_PERCENT = 35
+  const val GOLDEN_GOBBLER_REWARD = 3L
+  const val TURKEY_GATO_MAP_TALKS = 5
+
+  fun turkeySpawnWindowRemainingMillis(nowMillis: Long = System.currentTimeMillis()): Long {
+    val elapsedInHour = nowMillis % 3_600_000L
+    return (TURKEY_SPAWN_WINDOW_MS - elapsedInHour).coerceAtLeast(0L)
+  }
+
+  fun isTurkeySpawnWindowActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
+    return turkeySpawnWindowRemainingMillis(nowMillis) > 0L
+  }
+
+  fun turkeyRushStatusText(nowMillis: Long = System.currentTimeMillis()): String {
+    val rem = turkeySpawnWindowRemainingMillis(nowMillis)
+    return if (rem > 0L) {
+      "Turkeys & +3 Gobblers spawning (${formatElapsedDuration(rem)} left)"
+    } else {
+      "Next rush & store open in ${formatElapsedDuration(millisUntilNextEpochHour(nowMillis))}"
+    }
+  }
+
+  fun rollHourlyFestivalIsMega(random: kotlin.random.Random = kotlin.random.Random): Boolean {
+    return random.nextInt(100) < MEGA_FESTIVAL_CHANCE_PERCENT
+  }
+
+  fun festivalTierFor(isMega: Boolean): FestivalTier {
+    return if (isMega) FestivalTier.MEGA else FestivalTier.REGULAR
+  }
+
+  fun shouldSpawnTurkey(tier: FestivalTier, random: kotlin.random.Random = kotlin.random.Random): Boolean {
+    return random.nextInt(100) < tier.turkeySpawnChancePercent
+  }
+
+  fun shouldSpawnGoldenGobbler(tier: FestivalTier, random: kotlin.random.Random = kotlin.random.Random): Boolean {
+    val chance =
+      if (tier == FestivalTier.MEGA) GOLDEN_GOBBLER_CHANCE_MEGA_PERCENT
+      else GOLDEN_GOBBLER_CHANCE_REGULAR_PERCENT
+    return random.nextInt(100) < chance
+  }
+
+  val turkeyGatoDialogues: List<String> =
+    listOf(
+      "Gobble-MEOW!! Part Two is finally HERE! Cornucopia Citadel is open and Golden Gravy Falls is pouring 3.0x Gravy Rush boosts!",
+      "Keep your eyes peeled during the 5-minute hourly rush! Sparkling Golden Gobblers now spawn alongside regular Turkeys — tap one for +3 Turkeys at once!",
+      "Both Part One classics AND brand-new Part Two Mythic items (Roasted Crown Calico, Velvet Gravy Tabby, Cornucopia Horn & 2 Part 2 Rooms) are stocked inside!",
+      "Heard of Cornucopia Sovereign? Gather 15 lifetime Turkeys during the festival to claim the Mythic Cornucopia Sovereign badge in Quests!",
+      "Keep chatting with me if you haven't claimed my Feast Map yet — all 5 island zones are now bustling with banquet guests!",
+      "Gobble-PURR!! Here is your permanent Part 2 Feast Map! Open it anytime via the More menu to inspect every live Banquet Citadel zone!",
+    )
+
+  val part2MapLandmarks: List<Part2MapLandmark> =
+    listOf(
+      Part2MapLandmark(
+        id = "cornucopia_citadel",
+        title = "Cornucopia Citadel",
+        subtitle = "BOSS ARENA",
+        xFraction = 0.50f,
+        yFraction = 0.24f,
+        previewDetail = "Face Mecha-Gobbler Prime atop Cornucopia Citadel! Dodge its laser volley, break its shield, and witness what happens right before defeat...",
+        activityType = FeastZoneActivityType.BOSS_BATTLE,
+        actionLabel = "Teleport to Boss Arena",
+        rewardSummary = "Limited-Time Item • Turkeys • Pass XP",
+      ),
+      Part2MapLandmark(
+        id = "gravy_falls",
+        title = "Golden Gravy Falls",
+        subtitle = "FISHING PIER",
+        xFraction = 0.20f,
+        yFraction = 0.44f,
+        previewDetail = "Cast your line into shimmering molten amber! Time your hook and tension gauge to reel in Gravy Koi, +2 Turkeys, and rare Pearl Gems.",
+        activityType = FeastZoneActivityType.FISHING,
+        actionLabel = "Teleport to Fishing Pier",
+        rewardSummary = "Purrs • +1–2 Turkeys • Rare Gem Chance",
+      ),
+      Part2MapLandmark(
+        id = "pumpkin_bakery",
+        title = "Spiced Pie Bakery",
+        subtitle = "PIE DASH GAME",
+        xFraction = 0.78f,
+        yFraction = 0.40f,
+        previewDetail = "Step behind the warm brick oven! Assemble pumpkin, cinnamon & cream orders in Spiced Pie Dash before the timer runs out.",
+        activityType = FeastZoneActivityType.MINIGAME_BAKERY,
+        actionLabel = "Teleport to Bakery",
+        rewardSummary = "Purrs • +2 Turkeys • Pass XP",
+      ),
+      Part2MapLandmark(
+        id = "cranberry_bog",
+        title = "Cranberry Meadow",
+        subtitle = "HARVEST CATCH",
+        xFraction = 0.26f,
+        yFraction = 0.74f,
+        previewDetail = "Play Cranberry Harvest Catch! Tap popping ruby cranberries and golden berries while dodging spoiled acorns.",
+        activityType = FeastZoneActivityType.MINIGAME_CRANBERRY,
+        actionLabel = "Teleport to Meadow",
+        rewardSummary = "Purrs • +2 Turkeys • Pass XP",
+      ),
+      Part2MapLandmark(
+        id = "turkey_gato_hall",
+        title = "Turkey Gato's Banquet",
+        subtitle = "FEAST COOKING",
+        xFraction = 0.72f,
+        yFraction = 0.75f,
+        previewDetail = "Enter Turkey Gato's Royal Kitchen! Season, sizzle-sear at the sweet-spot heat, and glaze a 5-Star Thanksgiving Feast.",
+        activityType = FeastZoneActivityType.COOKING,
+        actionLabel = "Teleport to Kitchen",
+        rewardSummary = "Purrs • Up to +3 Turkeys • Pass XP",
+      ),
+    )
+
+  val festivalQuestPool: List<FestivalQuestTemplate> =
+    listOf(
+      FestivalQuestTemplate(
+        id = "tq_pets_35",
+        title = "Harvest Warmup",
+        description = "Pet your cat 45 times this hour.",
+        kind = FestivalQuestKind.PETS,
+        target = 45L,
+        turkeyReward = 1L,
+      ),
+      FestivalQuestTemplate(
+        id = "tq_turkeys_3",
+        title = "Turkey Spotter",
+        description = "Catch 2 spawning Turkeys during the 5m rush.",
+        kind = FestivalQuestKind.TURKEYS_TAPPED,
+        target = 2L,
+        turkeyReward = 2L,
+      ),
+      FestivalQuestTemplate(
+        id = "tq_upgrades_2",
+        title = "Feast Preparations",
+        description = "Buy 3 shop upgrades this hour.",
+        kind = FestivalQuestKind.UPGRADES,
+        target = 3L,
+        turkeyReward = 1L,
+      ),
+      FestivalQuestTemplate(
+        id = "tq_weather_2",
+        title = "Autumn Sky Watch",
+        description = "Witness 3 Sanctuary Weather shifts this hour.",
+        kind = FestivalQuestKind.WEATHER_SHIFTS,
+        target = 3L,
+        turkeyReward = 1L,
+      ),
+      FestivalQuestTemplate(
+        id = "tq_pets_100",
+        title = "Gobble Scritch Marathon",
+        description = "Pet your cat 140 times this hour.",
+        kind = FestivalQuestKind.PETS,
+        target = 140L,
+        turkeyReward = 2L,
+      ),
+    )
+
+  fun evaluateHourlyFestivalQuests(challenge: ChallengeProgressState): List<ActiveFestivalQuest> {
+    return festivalQuestPool.map { tpl ->
+      val progress =
+        when (tpl.kind) {
+          FestivalQuestKind.PETS -> challenge.festHourPets
+          FestivalQuestKind.TURKEYS_TAPPED -> challenge.festHourTurkeysTapped
+          FestivalQuestKind.UPGRADES -> challenge.festHourUpgradesBought
+          FestivalQuestKind.WEATHER_SHIFTS -> challenge.festHourWeatherShifts
+        }
+      ActiveFestivalQuest(
+        template = tpl,
+        progress = progress,
+        isClaimed = tpl.id in challenge.claimedFestivalQuestIds,
+      )
+    }
+  }
 
   val ascensionUpgrades: List<AscensionUpgradeDef> =
     listOf(
@@ -1085,6 +1669,15 @@ object GameCatalog {
         effectSummary = "2.0x Global Click & Auto-Purr Power",
         shardCost = 1L,
         prerequisiteIds = emptyList(),
+      ),
+      AscensionUpgradeDef(
+        id = "asc_gem_seeker",
+        tier = 2,
+        name = "Crystal Radar",
+        description = "Attune whiskers to rare gem veins hidden beneath the stars.",
+        effectSummary = "+50% Rare Gem Drop Rate & +1 Bonus Gem on Ascension",
+        shardCost = 2L,
+        prerequisiteIds = listOf("asc_golden_whiskers"),
       ),
       AscensionUpgradeDef(
         id = "asc_bargain_paws",
@@ -1105,6 +1698,24 @@ object GameCatalog {
         prerequisiteIds = listOf("asc_golden_whiskers"),
       ),
       AscensionUpgradeDef(
+        id = "asc_offline_mastery",
+        tier = 3,
+        name = "Dreaming Catnap",
+        description = "Train sanctuary helpers to keep purring longer while you sleep.",
+        effectSummary = "+15% Offline Efficiency (Up to 90%) & 48h Offline Cap",
+        shardCost = 2L,
+        prerequisiteIds = listOf("asc_bargain_paws"),
+      ),
+      AscensionUpgradeDef(
+        id = "asc_pass_scholar",
+        tier = 3,
+        name = "Season Tactician",
+        description = "Extract extra seasonal mastery from every pet, shift, and quest.",
+        effectSummary = "+50% Bonus November Pass XP from All Sources",
+        shardCost = 2L,
+        prerequisiteIds = listOf("asc_frenzy_aura"),
+      ),
+      AscensionUpgradeDef(
         id = "asc_lucky_catnip",
         tier = 3,
         name = "Lucky Catnip Burst",
@@ -1123,6 +1734,24 @@ object GameCatalog {
         prerequisiteIds = listOf("asc_frenzy_aura"),
       ),
       AscensionUpgradeDef(
+        id = "asc_click_supernova",
+        tier = 4,
+        name = "Paw Supernova",
+        description = "Channel your automated toys directly into thunderous manual taps.",
+        effectSummary = "2.0x Tap Power & +10% Base PPS Added to Every Tap",
+        shardCost = 3L,
+        prerequisiteIds = listOf("asc_lucky_catnip", "asc_offline_mastery"),
+      ),
+      AscensionUpgradeDef(
+        id = "asc_passive_symphony",
+        tier = 4,
+        name = "Sanctuary Symphony",
+        description = "Harmonize every cushion, spa, and observatory into an endless purr chorus.",
+        effectSummary = "2.0x Global Auto-Purr (PPS) Output",
+        shardCost = 3L,
+        prerequisiteIds = listOf("asc_lunar_harmony", "asc_pass_scholar"),
+      ),
+      AscensionUpgradeDef(
         id = "asc_rebirth_echo",
         tier = 4,
         name = "Eternal Rebirth Echo",
@@ -1130,6 +1759,15 @@ object GameCatalog {
         effectSummary = "+1.0x per Rebirth & Start Rebirths with 1,000 Purrs",
         shardCost = 3L,
         prerequisiteIds = listOf("asc_lucky_catnip", "asc_lunar_harmony"),
+      ),
+      AscensionUpgradeDef(
+        id = "asc_cosmic_sovereign",
+        tier = 5,
+        name = "Cosmic Nine Lives",
+        description = "Ultimate Honeycomb pinnacle crowning eternal caretakers.",
+        effectSummary = "1.5x Global Purr Surge & Start Rebirths with Lv.3 Starter Toys",
+        shardCost = 4L,
+        prerequisiteIds = listOf("asc_rebirth_echo"),
       ),
     )
 
@@ -1141,7 +1779,7 @@ object GameCatalog {
         purrsReward = 250_000L,
         shardsReward = 2L,
         bonusUpgradeLevels = 2L,
-        gemsReward = 15L,
+        gemsReward = 6L,
         title = "Grand Weekly Sovereign",
       ),
       WeeklyLeaderboardTier(
@@ -1150,7 +1788,7 @@ object GameCatalog {
         purrsReward = 100_000L,
         shardsReward = 1L,
         bonusUpgradeLevels = 1L,
-        gemsReward = 8L,
+        gemsReward = 3L,
         title = "Royal Podium",
       ),
       WeeklyLeaderboardTier(
@@ -1159,7 +1797,7 @@ object GameCatalog {
         purrsReward = 40_000L,
         shardsReward = 0L,
         bonusUpgradeLevels = 1L,
-        gemsReward = 4L,
+        gemsReward = 2L,
         title = "Elite Caretaker",
       ),
       WeeklyLeaderboardTier(
@@ -1168,7 +1806,7 @@ object GameCatalog {
         purrsReward = 15_000L,
         shardsReward = 0L,
         bonusUpgradeLevels = 0L,
-        gemsReward = 2L,
+        gemsReward = 1L,
         title = "Cozy Contender",
       ),
       WeeklyLeaderboardTier(
@@ -1177,13 +1815,285 @@ object GameCatalog {
         purrsReward = 5_000L,
         shardsReward = 0L,
         bonusUpgradeLevels = 0L,
-        gemsReward = 1L,
+        gemsReward = 0L,
         title = "Weekly Sanctuary Bonus",
+      ),
+    )
+
+  val backgrounds: List<CatBackgroundDef> =
+    listOf(
+      CatBackgroundDef(
+        id = "cozy_parlor",
+        name = "Cozy Sunlit Parlor",
+        description = "The classic warm sanctuary room with sunlit wood & cozy cushions.",
+        cost = 0L,
+        primaryHex = 0xFFFFF3E0,
+        secondaryHex = 0xFFFFE0B2,
+        accentHex = 0xFFFFB74D,
+      ),
+      CatBackgroundDef(
+        id = "sakura_garden",
+        name = "Sakura Tea Garden",
+        description = "Drifting cherry blossom petals over a serene lantern-lit veranda.",
+        cost = 1_500L,
+        primaryHex = 0xFFFCE4EC,
+        secondaryHex = 0xFFF8BBD0,
+        accentHex = 0xFFEC407A,
+      ),
+      CatBackgroundDef(
+        id = "autumn_porch",
+        name = "Golden Autumn Porch",
+        description = "Crisp harvest leaves, warm amber lanterns, and a cozy wooden railing.",
+        cost = 8_000L,
+        primaryHex = 0xFFFFF3E0,
+        secondaryHex = 0xFFFFCC80,
+        accentHex = 0xFFE65100,
+      ),
+      CatBackgroundDef(
+        id = "starlight_observatory",
+        name = "Starlight Observatory",
+        description = "A midnight glass dome glittering with constellations and soft nebula glow.",
+        cost = 25_000L,
+        primaryHex = 0xFF1A1B3A,
+        secondaryHex = 0xFF2E2A5E,
+        accentHex = 0xFF7C4DFF,
+      ),
+      CatBackgroundDef(
+        id = "tropical_cabana",
+        name = "Sunset Beach Cabana",
+        description = "Golden ocean horizon, gentle turquoise waves, and swaying palm silhouettes.",
+        cost = 65_000L,
+        primaryHex = 0xFFFFE0B2,
+        secondaryHex = 0xFF4DD0E1,
+        accentHex = 0xFFFF7043,
+      ),
+      CatBackgroundDef(
+        id = "crystal_shrine",
+        name = "Amethyst Crystal Shrine",
+        description = "Luminous floating quartz spires in a tranquil subterranean grotto.",
+        cost = 180_000L,
+        primaryHex = 0xFF2A1845,
+        secondaryHex = 0xFF4A2574,
+        accentHex = 0xFFE040FB,
+      ),
+      CatBackgroundDef(
+        id = "neon_cyber_lounge",
+        name = "Neon Lo-Fi Lounge",
+        description = "Synthwave skyline, glowing grid floor, and midnight cyber-cat vibes.",
+        cost = 500_000L,
+        primaryHex = 0xFF110D26,
+        secondaryHex = 0xFF1D1147,
+        accentHex = 0xFF00E5FF,
+      ),
+      CatBackgroundDef(
+        id = "thanksgiving_feast_hall",
+        name = "Autumn Harvest Feast Hall",
+        description = "Warm candlelight, golden garlands, and a grand Thanksgiving banquet backdrop.",
+        cost = 0L,
+        primaryHex = 0xFF4E2300,
+        secondaryHex = 0xFF8D3B00,
+        accentHex = 0xFFFFB300,
+        isEventExclusive = true,
+        turkeyCost = 10L,
+        eventGroup = "Thanksgiving",
+      ),
+      CatBackgroundDef(
+        id = "thanksgiving_pumpkin_meadow",
+        name = "Twilight Pumpkin Meadow",
+        description = "Glowing carved pumpkins, crisp harvest moon, and drifting crimson maple leaves.",
+        cost = 0L,
+        primaryHex = 0xFF2B132C,
+        secondaryHex = 0xFF6A1B33,
+        accentHex = 0xFFFF7043,
+        isEventExclusive = true,
+        turkeyCost = 18L,
+        eventGroup = "Thanksgiving",
+      ),
+      CatBackgroundDef(
+        id = "cornucopia_citadel",
+        name = "Cornucopia Citadel",
+        description = "Grand Thanksgiving Part 2 banquet spires aglow with amber lanterns & harvest banners.",
+        cost = 0L,
+        primaryHex = 0xFF3E1900,
+        secondaryHex = 0xFF7B2E00,
+        accentHex = 0xFFFFD54F,
+        isEventExclusive = true,
+        turkeyCost = 22L,
+        eventGroup = "Thanksgiving Part 2",
+      ),
+      CatBackgroundDef(
+        id = "golden_gravy_falls",
+        name = "Golden Gravy Falls",
+        description = "Cascading molten amber waterfalls plunging beneath Cranberry Meadow stars — Part 2!",
+        cost = 0L,
+        primaryHex = 0xFF210E1F,
+        secondaryHex = 0xFF6E260E,
+        accentHex = 0xFFFFAB00,
+        isEventExclusive = true,
+        turkeyCost = 30L,
+        eventGroup = "Thanksgiving Part 2",
       ),
     )
 
   val blogPosts: List<BlogPostDef> =
     listOf(
+      BlogPostDef(
+        version = "v23.0",
+        date = "Nov 2026",
+        title = "Playable Part 2 Map Zones, Fishing, Feast Cooking, Boss Battle & Frozen Teaser!",
+        summary = "Tap any zone on the Part 2 Feast Map to teleport! Play Cranberry Harvest, Spiced Pie Dash, Golden Gravy Fishing, Turkey Feast Cooking & battle Mecha-Gobbler Prime for a shocking December 1st Cutscene + Limited-Time Reward!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Interactive Map Teleporting: Click any landmark on Turkey Gato's Part 2 Map to travel straight into 5 brand-new playable island zones!",
+          "Fishing, Cooking & Minigames: Reel in Golden Gravy Koi at Gravy Falls, season & sear a 5-Star feast at Turkey Gato's Banquet, or beat Cranberry Meadow & Spiced Pie Bakery for Turkeys, Purrs & rare Gems!",
+          "Cornucopia Citadel Boss Battle: Challenge Mecha-Gobbler Prime with timed Shields, Catnip Heals & Cranberry Surges!",
+          "Boss Glitch Cutscene & Limited Reward: Push the Boss to the brink of defeat to witness a glitched blackout, a Christmas Cat slowly thawing inside an ice cube ('Fully Melts On December 1st.'), and claim the limited Melting Solstice Crown!",
+        ),
+        fullArticleParagraphs = listOf(
+          "Your Part 2 Feast Map isn't just a preview atlas anymore — every single island landmark now teleports you into a dedicated interactive zone!",
+          "Cast your line at Golden Gravy Falls Fishing Pier, whisk up recipes at Spiced Pie Bakery, tap ripe harvest berries in Cranberry Meadow, or run the 3-stage grill in Turkey Gato's Banquet Kitchen to stack Purrs, Turkeys, Pass XP, and occasional Rare Gems.",
+          "Ready for the main event? Teleport to Cornucopia Citadel to battle Mecha-Gobbler Prime! Dodge incoming beams and chip the Boss down — right before defeat, a dramatic Cutscene triggers where something cold glitches the Boss off the screen, revealing a frozen Christmas Cat melting toward December 1st and awarding the Limited-Time Melting Solstice Crown!",
+        ),
+      ),
+      BlogPostDef(
+        version = "v20.0",
+        date = "Nov 2026",
+        title = "Thanksgiving Event: Part Two, Leaderboard Renovation & Cloud Sync Fix!",
+        summary = "Thanksgiving Part Two is HERE with +3 Golden Gobblers, 3.0x Gravy Rush, Mythic Banquet Coats, 2 Part 2 Rooms, renovated Podium Leaderboard & Firestore Permissions Fix!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Thanksgiving Event: Part Two: Golden Gobblers (+3 Turkeys!), 3.0x MEGA Gravy Rush, Mythic Roasted Crown Calico & Velvet Gravy Tabby coats, Cornucopia Horn, Golden Gravy Scepter, Cornucopia Royale Theme & 2 Part 2 Rooms!",
+          "Cornucopia Sovereign Achievement: Earn 15 lifetime Turkeys to unlock the Mythic Cornucopia Sovereign badge in Quests.",
+          "Renovated Global Leaderboard: Cleaner Top-3 Podium showcase, streamlined Weekly Rewards bar, pinned Your Rank chip & crisp formatted Purr badges.",
+          "Firestore PERMISSION_DENIED Fix: Resolved missing cloud schema allowances for Room Backgrounds and limited background Exist Counters.",
+        ),
+        fullArticleParagraphs = listOf(
+          "Welcome to Thanksgiving Event: Part Two! Everything teased on Turkey Gato's Part 2 Feast Map is now live across the Sanctuary.",
+          "During every hourly 5-minute rush window, shimmering Golden Gobblers now spawn alongside regular Turkeys — tap a Golden Gobbler for +3 Turkeys at once! Hourly Festival buffs also upgrade to 1.75x Regular and 3.0x Gravy Rush during Mega hours (33% chance every hour). Spend Turkeys in the Festival Store for Mythic Roasted Crown Calico, Velvet Gravy Tabby, Cornucopia Horn, Golden Gravy Scepter, Cornucopia Royale Theme, Cornucopia Citadel, and Golden Gravy Falls room backgrounds!",
+          "We also gave the Leaderboard screen a ground-up visual renovation: enjoy a clean Top-3 Podium showcase, a compact Weekly Rewards banner that keeps rankings front-and-center, and formatted Purr badges with zero layout crowding.",
+          "Finally, we squashed the Firestore PERMISSION_DENIED cloud sync error by updating security validation for custom Sanctuary Room Backgrounds and Limited Background Exist Counters.",
+        ),
+      ),
+      BlogPostDef(
+        version = "v17.0",
+        date = "Nov 2026",
+        title = "Purchasable Cat Room Backgrounds, Universal Slide-Nav, Quick Music & Frenzy Rebalance!",
+        summary = "Buy & equip 7 custom Sanctuary Room Backgrounds, slide across ALL 3 navigation layouts, open the Music Player in 1 tap from the Sanctuary, tougher Purr Frenzy combo, 5-minute Festival Store window, cleaner Settings & auto-opening Update Blog!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Purchasable Cat Room Backgrounds: Upgrade your cat's stage beyond the standard room! Unlock Sakura Tea Garden, Golden Autumn Porch, Starlight Observatory, Sunset Beach Cabana, Amethyst Crystal Shrine & Neon Lo-Fi Lounge in Shop -> Customize.",
+          "Slide-to-Navigate on ALL 3 Layouts: Smooth finger-sliding navigation with crisp haptic ticks now works on Pill Dock, Bottom Bar, AND Side Rail!",
+          "Quick-Access Music Player & Cleaner Settings: Moved the Studio Music Player right into the Sanctuary header & More menu. Settings now stays super clean with Free Themes only (Limited Themes live in Inventory) and no redundant Widget button.",
+          "Tougher Purr Frenzy & 5-Minute Festival Store: Purr Frenzy now takes real rapid-tapping skill to charge and hold, and the Thanksgiving Festival Store opens for the same exciting 5-minute rush window each hour!",
+        ),
+        fullArticleParagraphs = listOf(
+          "Welcome to PurrTap v17.0 — packed with community-requested polish, deeper customization, and tighter gameplay balance!",
+          "You can now purchase and equip custom Sanctuary Room Backgrounds for your cat in Shop -> Customize! Swap the classic sunlit parlor for a drifting Sakura Tea Garden, a midnight Starlight Observatory, a glowing Amethyst Crystal Shrine, or a Neon Lo-Fi Lounge.",
+          "Navigation just got even smoother: the tactile finger-sliding gesture from the Pill Dock now works across ALL 3 navigation formats (Floating Pill Dock, Bottom Bar, and Side Rail). We also moved the Studio Music Player out of Settings into a dedicated 1-tap button in the Sanctuary header and More menu, cleaned up Settings to show Free Themes only (while Limited Themes stay organized in Inventory), and removed the duplicate Widgets button.",
+          "Finally, Purr Frenzy Combo has been rebalanced to feel truly earned — requiring faster tapping to charge and steady rhythm to maintain — and the Thanksgiving Festival Store now opens exclusively during the 5-minute hourly rush window alongside wild Turkey spawns. Plus, whenever a new update drops, this Update Blog will pop up automatically so you never miss what's new!",
+        ),
+      ),
+      BlogPostDef(
+        version = "v15.0",
+        date = "Nov 2026",
+        title = "Cleaner Sanctuary Menu, 5m Turkey Rush, 12-Hex Ascension Tree & Organized Inventory!",
+        summary = "Decluttered Sanctuary with a unified More menu, organized Weather + Moonlight countdown inside the Weather hub, 5-minute hourly Turkey spawns, 6 new Honeycomb Ascension upgrades, strict Event-ordered Inventory, and rare Gems & Turkeys rebalance!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Cleaner Sanctuary & More Menu: Consolidated Inventory, Style, Widgets, Part 2 Map, Daily Rewards, Settings, Account & Admin into a single sleek More menu — plus streamlined Weather pill outside & Moonlight Countdown moved inside Weather!",
+          "5-Minute Turkey Spawn Rush: When the Thanksgiving Festival rerolls each hour, wild Turkeys now only spawn during the first 5 minutes so every catch feels exciting before waiting for the next reroll.",
+          "12-Hex Honeycomb Ascension Tree: Added 6 outer-ring upgrades (Crystal Radar, Dreaming Catnap, Season Tactician, Paw Supernova, Sanctuary Symphony, and Cosmic Nine Lives).",
+          "Event-Organized Inventory & Currency Rebalance: Inventory now separates items strictly by Event (Thanksgiving, November Pass, Gem Vault, Daily Streaks, Starlight Archive, Code Vault) and rebalanced Gems & Turkeys to feel truly rewarding!",
+        ),
+        fullArticleParagraphs = listOf(
+          "PurrTap v15.0 delivers a cleaner, calmer Sanctuary experience while deepening late-game strategy!",
+          "First, we decluttered the main Sanctuary screen: Inventory, Style, Widgets, Daily Rewards, Settings, Part 2 Map, Account, and Admin tools now live inside a clean More button & Sanctuary Menu sheet. We also simplified the Weather pill outside and moved the live Moonlight / Bloodmoon countdown card directly inside the newly organized Game Weather sheet.",
+          "Second, Thanksgiving Part One Turkeys and Rare Sanctuary Gems have been carefully rebalanced! Wild Turkeys now spawn exclusively during a 5-minute rush window right after each hourly Festival reroll, and Rare Gems drop at tighter, more coveted rates across taps, quests, streaks, passes, and prestige resets so every Gem and Turkey earned feels genuinely rewarding.",
+          "Finally, the Honeycomb Ascension Tree doubles from 6 to 12 interconnected hexes with real mechanics across taps, passive purrs, offline catnaps, Pass XP, Gems, and starter toys — and your Inventory now strictly separates every collectible by Event so Starlight Catnip archive gear never mixes with Thanksgiving items!",
+        ),
+      ),
+      BlogPostDef(
+        version = "v14.0",
+        date = "Nov 2026",
+        title = "Thanksgiving Event Part One, Turkey Gato, Part 2 Map & Mobile Tree + Widgets Button!",
+        summary = "Starlight Catnip Event is officially over! Welcome Thanksgiving Part One with Hourly Regular/Mega Festivals (33% Mega!), Turkeys every 10s, Turkey Gato NPC & Part 2 Map (Nov 22), Mobile-reachable Ascension Tree & a main-screen Widgets button!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Thanksgiving Event: Part One: Rerolls every hour with a 33% chance to erupt into a MEGA Festival! Catch Turkeys spawning every 10s (20% Regular / 40% Mega) across your screen to buy limited Thanksgiving Cat Skins, Accessories & Themes!",
+          "Turkey Gato & Part 2 Feast Map (Coming Nov 22nd): Meet Turkey Gato inside the Event Boutique! Chat with him enough times to unlock an interactive Part 2 Map you can view anytime — plus Festival Quests & Nov 22 Sneak Peek!",
+          "Ascension Tree Mobile Reachability Fix: Rebuilt Honeycomb Ascension Tree as a true full-screen safe-inset overlay with 48dp top zoom controls, scrollable inspector, and one-tap Hex Quick-Select chips!",
+          "Main-Screen Widgets Button & Gallery: Added a visible Widgets button right on the Sanctuary so you can preview and pin Home Screen Widgets effortlessly!",
+        ),
+        fullArticleParagraphs = listOf(
+          "The Starlight Catnip Event has officially concluded — thank you to every caretaker who lit lanterns with us! Today kicks off Thanksgiving Event: Part One!",
+          "Every single hour, a fresh Thanksgiving Festival rolls open with a 67% chance of a Regular Festival (1.5x Purrs, 20% Turkey spawn rate every 10s) and a 33% chance of a MEGA Festival (2.25x Purrs, 40% Turkey spawn rate every 10s). Wild Turkeys pop up right on your screen — tap them for +1 Turkey and complete Hourly Festival Quests for bonus Turkeys!",
+          "Limited Thanksgiving Cat Skins (Pumpkin Pie Tabby, Cranberry Harvest, Plumage Pheasant), Accessories (Harvest Pilgrim Hat, Autumn Leaf Scarf, Golden Turkey Plush), and Themes (Cranberry Feast, Golden Cornucopia) can only be purchased with Turkeys. Greet Turkey Gato inside the festival and keep talking to unlock the permanent Part 2 Feast Map previewing what lands on November 22nd!",
+          "On the usability front, the Honeycomb Ascension Tree now uses proper full-screen safe insets with accessible 48dp controls so every button is easy to reach on mobile, and a new Widgets button sits directly on your Sanctuary screen!",
+        ),
+      ),
+      BlogPostDef(
+        version = "v13.0",
+        date = "Nov 2026",
+        title = "Side Rail Layout Polish, Full-Screen Honeycomb Ascension Tree & Home Screen Widgets!",
+        summary = "Fixed tight Side Rail formatting across all screens, rebuilt Gato Ascensión into a full-screen Honeycomb upgrade lattice, and launched interactive Android Home Screen Widgets!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Side Rail Responsive Polish: Headers, segmented tabs, Rebirth/Pass badges, and Shop rows now adapt cleanly without clipping or text squishing when using Side Rail on phones!",
+          "Full-Screen Honeycomb Ascension Tree: Opening the Ascension Tree now launches a full-screen interactive hexagonal honeycomb map with glowing energy conduits, pan/zoom controls & node inspector!",
+          "Home Screen Widgets (2 Styles): Pin PurrTap Sanctuary or PurrTap Mini Cat from your Home Screen or Settings -> Preferences to track Purrs, +Tap/+PPS, Weather & pet your cat right from your home screen!",
+        ),
+        fullArticleParagraphs = listOf(
+          "PurrTap v13.0 focuses on spatial clarity, prestige spectacle, and instant sanctuary access right from your Android Home Screen.",
+          "First, every Sanctuary screen—Sanctuary, Shop, Quests, Ranks, and Guide—now adapts smoothly when Side Rail navigation is enabled on handheld screens. Top headers, balance chips, segmented buttons, and Event/Pass banners automatically reflow so text stays sharp and tappable.",
+          "Second, Gato Ascensión upgrades now open in a dedicated Full-Screen Honeycomb Ascension Tree! Explore your celestial hex nodes arranged around the Golden Sanctuary Core with live prerequisite beams, pan-and-zoom navigation, and one-tap Shard unlocking.",
+          "Finally, you can now add two interactive Jetpack Glance Home Screen Widgets (PurrTap Sanctuary & PurrTap Mini Cat)! View your live Purrs balance, active +Tap/+PPS, Gems, Daily streak, and current Weather—and tap 'Pet Cat' directly on your home screen to earn Purrs before you even open the app.",
+        ),
+      ),
+      BlogPostDef(
+        version = "v12.0",
+        date = "Nov 2026",
+        title = "Layout Formats, Smooth Pass Rebalance, Profile Fixes & Weird Signal Static",
+        summary = "Fixed Profile Picture & Banner uploads, added customizable Navigation Formats in Settings, rebalanced November Pass XP scaling (+5% Free / +15% VIP) with full Pass Restart, plus strange Sanctuary signal glitches...",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "PFP & Banner Upload Fix: Fixed photo compression orientation, transparent PNG handling, and live ticker state resets across Local & Cloud profiles!",
+          "Navigation Layout Formats in Settings: Switch freely between Bottom Bar, Side Rail, or a sleek Clean Floating Dock anytime in Settings -> Preferences!",
+          "Rebalanced November Pass + Pass Restart: Free Tier XP curve nerfed to +5%/tier and VIP Tier nerfed to +15%/tier. Reach Tier 30 to Restart the Pass as many times as you like!",
+          "System Static Whisper: Keep an eye on small glitched packets across Sanctuary screens — some say the Dog Vault Keeper wasn't exaggerating...",
+        ),
+        fullArticleParagraphs = listOf(
+          "PurrTap v12.0 brings a big quality-of-life polish pass! First, we squashed the bugs affecting custom Profile Picture (PFP) and Banner uploads—photos now auto-rotate, flatten cleanly, compress reliably under cloud limits, and preview right on your Caretaker Card even before linking a Google account.",
+          "Second, you can now pick how you navigate PurrTap! Visit Settings -> Preferences -> Navigation Format to switch between the classic Bottom Bar, a compact Side Rail along the left edge, or a sleek Clean Floating Dock.",
+          "Third, we heavily eased the November Pass grind: Free Track XP scaling dropped from +15%/tier to +5%/tier, and VIP Track XP scaling dropped from +30%/tier to +15%/tier! Plus, once you max out the pass, you can Restart the November Pass from Tier 0 (keeping VIP unlocked) to re-earn all 30 tiers of rewards.",
+          "Finally... a few caretakers reported tiny corrupted monospace flickers appearing on Sanctuary dashboards. Our engineers assure everyone it's probably harmless weather interference—though the Dog Vault Keeper in Settings seems convinced otherwise.",
+        ),
+      ),
+      BlogPostDef(
+        version = "v11.0",
+        date = "Nov 2026",
+        title = "Studio Music Deck, Interactive Profiles, Exist Counters & Danger Zone!",
+        summary = "Remodeled Music Player with scrubbable timeline & speed controls, clickable Leaderboard Profile cards with custom PFP/Banners, Exist Counters on all limited-time items, and a fresh-start Danger Zone!",
+        readTimeLabel = "3 min read",
+        authorTag = "Sanctuary Team",
+        highlights = listOf(
+          "Remodeled Studio Music Deck: Scrub anywhere with a real progress bar, shuffle tracks, cycle Repeat modes (Off/All/One), adjust playback speed (0.75x–1.5x), or set a Sleep Timer!",
+          "Interactive Leaderboard Profiles: Tap any caretaker (including yourself!) on Ranks to view their Banner, Profile Picture, Bio, and Public or Private stats—customize yours anytime.",
+          "Limited-Time Exist Counters: Every limited-time Skin, Accessory, and Color Theme now tracks how many exist worldwide (\"X Exist\") across Inventory, Event Shop, Pass & Vaults!",
+          "Danger Zone Fresh Start & Sanctuary Admin Controls: Start completely over anytime in Settings -> Preferences -> Danger Zone.",
+        ),
+        fullArticleParagraphs = listOf(
+          "Welcome to PurrTap v11.0! We rebuilt the audio deck from scratch into a Studio Music Player inside Settings. You can now scrub along the track timeline, toggle Shuffle, switch between Repeat Off / All / One, change playback speed from 0.75x to 1.5x, set a Sleep Timer, and manage your custom uploaded audio queue.",
+          "Your Ranks page is now social and personal! Clicking anyone on the Global Leaderboard—including your own entry—pops open a custom Profile Card showing their uploaded Banner, Profile Picture, Cat Showcase, Bio, and Lifetime Stats (if set to Public) or a crisp Privacy badge when kept Private.",
+          "Every limited-time Skin, Accessory, and Color Theme—from Starlight Festival exclusives and Daily Streak rewards to November Pass Tier 30 Golden Touch, Gem Vault relics, and Hacker Protocol—now carries a live Exist Counter showing how many exist!",
+        ),
+      ),
       BlogPostDef(
         version = "v9.0",
         date = "Nov 2026",
@@ -1199,9 +2109,9 @@ object GameCatalog {
         ),
         fullArticleParagraphs = listOf(
           "Welcome to PurrTap v9.0! We wanted every caretaker—whether you have a Google account, play strictly offline, or share a device—to enjoy clear account choices, deeper patch notes, and an exciting ultra-rare progression currency.",
-          "1. Sign-In Options Without a Google Account: Tapping the account icon on the Sanctuary header, the Ranks screen, or Settings now opens our Sign-In Options dialog. You can set up a named Local Caretaker Account complete with a unique Sanctuary ID code, optional 4-digit PIN protection, and one-tap Save Backup Code Export & Import so you can back up or move your sanctuary anytime. Google Sign-In via Credential Manager remains available whenever you want Cloud Sync and Global Ranks.",
+          "1. Sign-In Options Without a Google Account: Tapping More -> Account on the Sanctuary, Ranks, or Settings now opens our Sign-In Options dialog. You can set up a named Local Caretaker Account complete with a unique Sanctuary ID code, optional 4-digit PIN protection, and one-tap Save Backup Code Export & Import so you can back up or move your sanctuary anytime. Google Sign-In via Credential Manager remains available whenever you want Cloud Sync and Global Ranks.",
           "2. Full Update Blog Reader Bubbles: Previously, Update Blog cards only showed short bullet summaries. Now, clicking any release card opens an interactive Update Blog Reader Bubble displaying the full story behind every update plus Next/Previous issue navigation.",
-          "3. Rare Gems & The Gem Vault: Gems are a scarce luxury currency separate from Purrs and Hardcore Purrs—they survive Rebirths and Ascensions! Earn Gems rarely on high-combo taps (0.6% normal, boosted to 1.0% during Bloodmoon, Aurora, Meteor Shower, and Golden Rain), or guarantee them through Quests, Day 7/14 Streaks, Weekly Rank rewards, Rebirths (+3 Gems), and Gato Ascensións (+10 Gems). Visit Shop -> Gems to forge permanent Gemstone Purr Charms, unleash 3.0x Starlight Gem Frenzy surges, summon Cosmic Skies, and collect the Prismatic Galaxy coat and Diamond Catnip Crown!",
+          "3. Rare Gems & The Gem Vault: Gems are a rare luxury currency separate from Purrs and Hardcore Purrs—they survive Rebirths and Ascensions! Find them rarely on high-combo taps (1.75x+ combo), or earn them through mid/endgame Quests, Day 7/14 Streaks, Weekly Rank rewards, Rebirths (+1 Gem), and Gato Ascensións (+4 Gems). Visit Shop -> Gems to forge permanent Gemstone Purr Charms, unleash 3.0x Starlight Gem Frenzy surges, summon Cosmic Skies, and collect the Prismatic Galaxy coat and Diamond Catnip Crown!",
         ),
       ),
       BlogPostDef(
@@ -1213,13 +2123,13 @@ object GameCatalog {
         authorTag = "Sanctuary Team",
         highlights = listOf(
           "Main Screen Weather Particles: Watch falling autumn leaves, drifting snow, cherry blossoms, twinkling meteors, raindrops, and golden sparkles animate live across the Sanctuary screen!",
-          "Dedicated Inventory: Tap Inventory on the Sanctuary or Shop screen to browse and equip all Limited-Time Event & Pass Skins, Accessories, and Themes—keeping Customization focused on permanent styles.",
+          "Dedicated Inventory: Tap More -> Inventory or Shop -> Customize to browse and equip Event-organized Skins, Accessories, and Themes—keeping Customization focused on permanent styles.",
           "Hourly Battle Pass Quests: Three fresh Pass Quests arrive every hour to award scaling Pass XP!",
-          "Balanced Battle Pass XP Curves: Free Track starts at 100 XP and scales +15% per tier; VIP Track starts at 500 XP and increases by +30% every tier!",
+          "Balanced Battle Pass XP Curves: Free Track starts at 100 XP and scales +5% per tier; VIP Track starts at 500 XP and increases by +15% every tier (rebalanced in v12.0)!",
         ),
         fullArticleParagraphs = listOf(
           "Your Sanctuary sky now comes alive with full-screen ambient particle physics! Every time our randomized Game Weather shifts, crisp visual atmosphere fills the stage—from fluttering Autumn Maple Leaves and Sakura Petals to glistening Snowflakes, Shooting Stars, Aurora Ribbons, and shimmering 24K Golden Rain.",
-          "We also introduced the 30-Tier November Pass with both a Free Track and a prestige VIP Track (unlocked at 1 Gato Shard and 100+ Upgrades). To keep later tiers genuinely rewarding to chase, Free Tiers start at 100 XP and grow +15% per tier, while VIP Tiers start at 500 XP and climb +30% each tier. Three Hourly Pass Quests refresh at the top of every hour with scaling XP payouts!",
+          "We also introduced the 30-Tier November Pass with both a Free Track and a prestige VIP Track (unlocked at 1 Gato Shard and 100+ Upgrades). Free Tiers start at 100 XP and grow +5% per tier, while VIP Tiers start at 500 XP and climb +15% each tier (rebalanced in v12.0). Three Hourly Pass Quests refresh at the top of every hour with scaling XP payouts!",
           "Reaching VIP Tier 30 unlocks the Golden Touch Cat Skin: every 30 minutes it stays equipped, your Sanctuary erupts into Golden Rain—granting 4.0x all Purr gains for 3 minutes! And to keep Customization tidy, all Event, Daily Prize, Battle Pass, and Gem Vault collectibles live inside your dedicated Inventory.",
         ),
       ),
@@ -1234,13 +2144,13 @@ object GameCatalog {
           "Endless Daily Streaks: Daily Streaks never cap at 14 days—keep streaking forever with scaling +0.5x cycle multipliers, +150 Purrs/day streak scaling, Cycle 2+ weekly upgrade drops, and +1 Gato Shard every 30 days!",
           "Weekly Leaderboard Rewards: Every week pays out Purrs, Gato Shards, and bonus Upgrades based on your Global Leaderboard rank (or Sanctuary Qualifier tier).",
           "Offline Earnings & Welcome Back Report: Your Auto-Purr Sanctuary keeps earning while you're away (up to 24h) and greets you with exact time away and Purrs made!",
-          "7 New Achievements & Badges: 18 total Badges & Quests including Fortnight Guardian, Endless Devotion, Phoenix Kitten, Astral Gato, Sky Sovereign, Whisker Deity, and Galaxy Purr Emperor.",
+          "7 New Achievements & Badges: 24 total Badges & Quests including Fortnight Guardian, Endless Devotion, Phoenix Kitten, Astral Gato, Sky Sovereign, Whisker Deity, and Galaxy Purr Emperor.",
           "Lifetime Player Stats in Settings: Open Settings -> Stats to inspect everything since the day you joined!",
         ),
         fullArticleParagraphs = listOf(
           "Devoted caretakers deserve rewards that never hit a ceiling. In v6.0 we removed the 14-day cap so Daily Streaks scale endlessly—Day 15, Day 30, Day 100, and beyond! Each new 14-day cycle adds +0.5x to base daily Purrs plus +150 Purrs per streak day, while every 30th day awards a coveted +1 Gato Shard.",
           "Weekly Leaderboard Rewards now reset every Monday UTC, granting bonus Purrs, Shards, Gems, and free Upgrade levels for everyone on the Ranks tab—even local caretakers receive the Weekly Sanctuary Bonus.",
-          "Finally, your Auto-Purr Sanctuary continues working while you're away (up to 24 hours per session at 50% efficiency, rising to 75% once you Ascend). Whenever you return, a Welcome Back report calculates the exact duration gone and Purrs earned, alongside a full Lifetime Stats ledger inside Settings.",
+          "Finally, your Auto-Purr Sanctuary continues working while you're away (up to 24 hours per session at 50% efficiency, rising to 75% once you Ascend, or 90%/48h with Dreaming Catnap). Whenever you return, a Welcome Back report calculates the exact duration gone and Purrs earned, alongside a full Lifetime Stats ledger inside Settings.",
         ),
       ),
       BlogPostDef(
@@ -1258,7 +2168,7 @@ object GameCatalog {
         ),
         fullArticleParagraphs = listOf(
           "PurrTap v5.0 introduced Gato Ascensión—a thrilling second layer of prestige. Once you accumulate 5 Rebirths, you can Ascend: resetting your Rebirth count back to 1 and Rebirth bonus multiplier to 0 in exchange for 1 precious Gato Shard.",
-          "Spend Gato Shards on the permanent 4-tier Ascension Tree (Golden Whiskers, Celestial Bargain -25% costs, Hyper Frenzy Aura, Lucky Catnip 5x Crits, Astral Weather Harmony, and Eternal Rebirth Echo). Hardcore Mode also gained its own sealed Hardcore Purrs currency wallet so challenge runs stay 100% fair!",
+          "Spend Gato Shards on the permanent Honeycomb Ascension Tree! Hardcore Mode also gained its own sealed Hardcore Purrs currency wallet so challenge runs stay 100% fair!",
           "On the audio side, we replaced legacy streaming buffers with pre-synthesized 44.1kHz WAV buffers loaded directly into SoundPool—producing warm, realistic 25Hz feline purrs and gentle meows every single time you pet your cat.",
         ),
       ),
@@ -1271,7 +2181,7 @@ object GameCatalog {
         authorTag = "Core Balance",
         highlights = listOf(
           "Theme Requirements Enforced: Unlockable themes now verify both their gameplay milestone requirements and Purr cost before unlocking.",
-          "Starlight Catnip Festival runs through November 18 — open the Event Boutique to preview the upcoming Thanksgiving Harvest Purrfest!",
+          "Starlight Catnip Festival Archive: Older Starlight event collectibles are now safely preserved inside their own Archive section in Inventory.",
           "Added Rebirths: Reset active run Purrs, Shop Upgrades, and standard Skins/Accessories (Event items, Daily Streak & Themes stay safe!) for a stacking +0.5x multiplier.",
           "Added Hardcore Mode: High unlock requirements (1M Lifetime Purrs, 5K Pets, 50 Upgrades, 5 Badges), 3.5x shop costs, 0.75x earnings, and 2x faster combo decay.",
         ),
@@ -1288,7 +2198,7 @@ object GameCatalog {
         readTimeLabel = "2 min read",
         authorTag = "Features & Audio",
         highlights = listOf(
-          "Clicking the Live Event or Moonlight Event card opens an interactive Pop-Up Bubble Shop with limited-time Cat Skins, Accessories, and Color Themes.",
+          "Clicking the Live Event card opens an interactive Pop-Up Boutique with limited-time Cat Skins, Accessories, and Color Themes.",
           "Upload your own MP3, WAV, or audio files directly into the Settings Built-In Music Player!",
           "Expanded Sanctuary Game Weather to 12 atmospheric skies (Petal Breeze, Morning Mist, Sunshower Rainbow, Starfall Sky, Aurora Borealis, Autumn Gust, and more).",
           "Doubled Daily Rewards to a 14-Day Prize Calendar including bonus Cat Skins, Accessories, Upgrade Levels, and a Velvet Rose Gold Color Theme.",
@@ -1303,55 +2213,53 @@ object GameCatalog {
   val howToPlaySteps: List<Pair<String, String>> =
     listOf(
       "1. Pet Your Cat & Hunt Rare Gems" to
-        "Tap your cat for purrs, meows, and Purr Frenzy combos. Keeping combos at 1.25x+ gives a rare chance to discover +1 Gem—boosted even higher during Bloodmoon, Aurora, Meteor Shower, or Golden Rain! Spend Gems in Shop -> Gems.",
-      "2. Sign-In Options & Save Backup Codes" to
-        "No Google account? No problem! Open the Account icon at the top of the Sanctuary or Leaderboard to create a Local Caretaker Account with a Sanctuary ID & optional PIN, or export a Save Backup Code anytime.",
-      "3. Endless Daily Streaks & Weekly Ranks" to
-        "Claim Daily Rewards every day with zero streak cap—Day 7 & Day 14 award Gems, multipliers scale every 14-day cycle, and every 30 days grants +1 Gato Shard! Check the Ranks tab weekly for Weekly Leaderboard Rewards.",
-      "4. November Pass, Events & Inventory" to
-        "Tap November Pass to climb 30 tiers via Hourly Pass Quests, or tap Live Event for the Pop-Up Boutique until Nov 18 (with Thanksgiving Preview inside). Equip all limited items via Inventory!",
-      "5. Rebirth, Gato Ascensión & Hardcore Mode" to
-        "Rebirth grants +0.5x multipliers & +3 Gems while keeping Streaks, Themes, Gems, and Event/Vault/Pass items. At 5 Rebirths, trigger Gato Ascensión for +1 Gato Shard & +10 Gems!",
+        "Tap your cat for purrs, meows, and Purr Frenzy combos. Keeping combos at 1.75x+ gives a rare chance to discover +1 Gem (boosted during Bloodmoon, Aurora, Meteor Shower, or Golden Rain—or with Crystal Radar!). Spend Gems in Shop -> Gems.",
+      "2. Clean Sanctuary More Menu & Account Backups" to
+        "Tap More in the Sanctuary header to jump to Inventory, Style, Daily Rewards, Home Widgets, Settings, Account/Save Backup Codes, and Admin tools without screen clutter.",
+      "3. 5-Minute Hourly Turkey Rush & Part Two Store" to
+        "At the top of each hour the Thanksgiving Part 2 Festival rerolls (33% Gravy Rush 3.0x!). Wild Turkeys & +3 Golden Gobblers spawn and the Festival Store opens for the first 5 minutes of every hour.",
+      "4. Organized Inventory & November Pass" to
+        "Tap November Pass to climb 30 tiers via Hourly Pass Quests, and open More -> Inventory to browse limited collectibles neatly grouped by Event.",
+      "5. Rebirth, 12-Hex Honeycomb Ascensión & Weather" to
+        "Rebirth grants +0.25x multipliers & +1 Gem while keeping Streaks, Themes, Gems, and Limited items. At 5 Rebirths, Ascend for +1 Gato Shard & +4 Rare Gems to unlock any of the 12 Honeycomb Tree hexes! Tap the Weather pill anytime for Weather Buffs & Midnight Moonlight Countdown.",
     )
 
   val faqItems: List<FaqItemDef> =
     listOf(
       FaqItemDef(
         "How do I play and back up my save without a Google Account?",
-        "Tap the account/cloud button on the Sanctuary top bar, Ranks screen, or Settings -> Preferences -> Caretaker Account to open Sign-In Options. You can switch between Instant Guest Mode, a named Local Caretaker Account (with a Sanctuary ID code & optional PIN lock + Export/Import Save Code), or Google Sign-In for automatic cloud sync.",
+        "Tap More -> Account & Sign-In on the Sanctuary or the Account button on Ranks/Settings. You can switch between Instant Guest Mode, a named Local Caretaker Account (with a Sanctuary ID code & optional PIN lock + Export/Import Save Code), or Google Sign-In for automatic cloud sync.",
       ),
       FaqItemDef(
         "How do I earn Rare Gems and what do they unlock?",
-        "Gems are a rare currency preserved across Rebirths and Ascensions! Find them rarely on high-combo pets (0.6% normal or 1.0% during Bloodmoon, Aurora, Meteor Shower, and Golden Rain), or guarantee them via Quests, Day 7/14 Daily Streaks, Weekly Leaderboard payouts, Rebirths (+3 Gems), Ascensions (+10 Gems), and November Pass milestones. Spend them in Shop -> Gems for Gemstone Purr Charms, Starlight Gem Frenzy (3.0x), Cosmic Weather Summons, Prismatic Lens, Diamond Catnip Crown, Prismatic Galaxy coat, Emerald Royale theme, or Gato Shards!",
+        "Gems are a scarce luxury currency preserved across Rebirths and Ascensions! Find them rarely on Critical Pets (0.2% normal or 0.4% boosted during Bloodmoon, Aurora, Meteor Shower, and Golden Rain), or earn them via mid/endgame Quests, Day 7/14 Streaks, Weekly Top-25 Rank payouts, Rebirths (+1 Gem), Ascensions (+4 Gems), and November Pass milestones. Spend them in Shop -> Gems!",
       ),
       FaqItemDef(
-        "How do the November Pass, Hourly Quests & VIP XP work?",
-        "Tap November Pass on the Sanctuary screen to progress through 30 tiers. Each tier requires more XP as you climb (Free starts at 100 XP +15%/tier; VIP starts at 500 XP and increases +30% every tier). Complete 3 Hourly Battle Pass Quests inside the Pass for scaling XP! VIP Tier 30 unlocks Golden Touch, triggering 3m Golden Rain (4.0x) every 30m equipped.",
+        "When do Turkeys & +3 Golden Gobblers spawn in Thanksgiving Part Two?",
+        "Whenever the hourly Festival rerolls at the top of the hour (67% Regular / 33% 3.0x Gravy Rush), wild Turkeys and Golden Gobblers (+3 Turkeys!) spawn and the Event Shop opens exclusively during the first 5 minutes! Once the 5-minute rush ends, spawning pauses until the next hourly reroll.",
       ),
       FaqItemDef(
-        "Where did Limited-Time Event, Pass & Gem Vault skins go?",
-        "All Limited-Time Event items, Daily Prize skins/accessories/themes, November Pass rewards, and Gem Vault collectibles live in your dedicated Inventory (accessible from the Inventory button on the Sanctuary or Shop Customize tab).",
+        "Where did Weather's Moonlight Countdown, Inventory, Style, and Settings move?",
+        "Moonlight & Bloodmoon's live countdown now lives cleanly inside the Weather popup (tap the Weather pill at the top right). Inventory, Style, Widgets, Daily Rewards, Part 2 Map, Settings, and Account tools are neatly organized inside the More button in the Sanctuary header!",
       ),
       FaqItemDef(
-        "How do Endless Daily Streaks work after Day 14?",
-        "Your streak counter keeps climbing indefinitely (Day 15, 30, 100, and beyond!). Each 14-day cycle adds +0.5x to the reward multiplier plus +150 bonus Purrs per streak day, Day 7/14 milestones grant rare Gems, Cycle 2+ grants bonus Upgrade Levels every 7 days, and every 30th day awards +1 Gato Shard!",
+        "How does the Inventory organize Limited-Time collectibles?",
+        "Inventory separates every limited item cleanly by Event in order—Thanksgiving Event (Part 1 & 2), November Pass, Gem Vault Relics, Daily Check-In Streaks, retired Starlight Catnip Archive, and the Secret Code Vault—so items from different events are never mixed together.",
       ),
       FaqItemDef(
-        "How do Weekly Leaderboard Rewards work?",
-        "Every week (Monday UTC reset), players earn Weekly Leaderboard Rewards (Purrs, Gato Shards, Rare Gems, and bonus Upgrade levels) based on their Global Rank (#1 Sovereign, #2–3 Royal Podium, #4–10 Elite, #11–25 Contender, or Weekly Sanctuary Bonus for local caretakers).",
-      ),
-      FaqItemDef(
-        "How are Offline Earnings calculated?",
-        "Whenever you step away for 10+ seconds, your Auto-Purr Sanctuary continues earning at 50% efficiency (75% after your first Gato Ascensión!), up to 24 hours per session. When you come back, a Welcome Back summary shows exactly how long you were gone and how many Purrs you made.",
-      ),
-      FaqItemDef(
-        "What does Gato Ascensión do and how do I unlock it?",
-        "Gato Ascensión requires 5 Rebirths. Ascending acts like a deeper Rebirth—resetting your Rebirths back to 1 and your Rebirth multiplier bonus back to 0x—while granting +1 Gato Shard and +10 Rare Gems to unlock permanent upgrades!",
+        "How do the 12 Honeycomb Ascension Tree upgrades work?",
+        "Gato Ascensión requires 5 Rebirths, resetting Rebirths back to 1 while granting +1 Gato Shard and +4 Rare Gems. Open the Honeycomb Ascension Tree to spend Shards across 12 interconnected hexes boosting click power, auto-purrs, prices, crit luck, weather buffs, offline catnaps, Pass XP, Gem drops, and Rebirth starters!",
       ),
     )
 
   fun formatCompactPurrs(amount: Long): String {
     return when {
+      amount >= 1_000_000_000_000_000_000L ->
+        String.format(Locale.US, "%.2fQT", amount / 1_000_000_000_000_000_000.0)
+      amount >= 1_000_000_000_000_000L ->
+        String.format(Locale.US, "%.2fqd", amount / 1_000_000_000_000_000.0)
+      amount >= 1_000_000_000_000L ->
+        String.format(Locale.US, "%.2fT", amount / 1_000_000_000_000.0)
       amount >= 1_000_000_000L -> String.format(Locale.US, "%.2fB", amount / 1_000_000_000.0)
       amount >= 1_000_000L -> String.format(Locale.US, "%.2fM", amount / 1_000_000.0)
       amount >= 10_000L -> String.format(Locale.US, "%.1fK", amount / 1_000.0)
@@ -1436,7 +2344,7 @@ object GameCatalog {
     unlockedAscensionIds: List<String> = emptyList(),
   ): Double {
     val step =
-      if ("asc_rebirth_echo" in unlockedAscensionIds) 1.0 else REBIRTH_MULTIPLIER_STEP
+      if ("asc_rebirth_echo" in unlockedAscensionIds) 0.45 else 0.25
     return 1.0 + (rebirthBonusSteps.coerceAtLeast(0L) * step)
   }
 
@@ -1463,23 +2371,37 @@ object GameCatalog {
 
   const val GEM_FRENZY_COST = 4L
   const val GEM_FRENZY_DURATION_MS = 120_000L
-  const val GEM_FRENZY_MULTIPLIER = 3.0
+  const val GEM_FRENZY_MULTIPLIER = 1.85
   const val GEM_WEATHER_SUMMON_COST = 3L
   const val GEM_PRISM_LENS_COST = 10L
   const val GEM_SHARD_FORGE_COST = 25L
-  const val REBIRTH_GEM_REWARD = 3L
-  const val ASCENSION_GEM_REWARD = 10L
-  const val GEM_DROP_RATE_NORMAL_PER_1000 = 6 // 0.6% per high-combo pet
-  const val GEM_DROP_RATE_BOOSTED_PER_1000 = 10 // 1.0% during Bloodmoon/Aurora/Meteor/Golden Rain
+  const val REBIRTH_GEM_REWARD = 1L
+  const val ASCENSION_GEM_REWARD = 4L
+  const val GEM_DROP_RATE_NORMAL_PER_1000 = 2 // 0.2% per high-combo (1.75x+) pet
+  const val GEM_DROP_RATE_BOOSTED_PER_1000 = 4 // 0.4% during Bloodmoon/Aurora/Meteor/Golden Rain
+
+  fun gemDropRatePer1000(
+    boostedSky: Boolean,
+    unlockedAscensionIds: List<String> = emptyList(),
+  ): Int {
+    val base = if (boostedSky) GEM_DROP_RATE_BOOSTED_PER_1000 else GEM_DROP_RATE_NORMAL_PER_1000
+    return if ("asc_gem_seeker" in unlockedAscensionIds) {
+      (base * 1.5).toInt()
+    } else {
+      base
+    }
+  }
 
   fun gemCharmCost(currentLevel: Long): Long = 5L + (currentLevel.coerceAtLeast(0L) * 3L)
 
-  fun gemCharmMultiplier(currentLevel: Long): Double = 1.0 + (currentLevel.coerceAtLeast(0L) * 0.25)
+  fun gemCharmMultiplier(currentLevel: Long): Double = 1.0 + (currentLevel.coerceAtLeast(0L) * 0.10)
 
   fun isEventItemExemptPattern(patternId: String): Boolean {
     return patterns.find { it.id == patternId }?.let {
       it.isEventExclusive &&
         (it.unlockSourceLabel == "Limited Event" ||
+          it.unlockSourceLabel == "Thanksgiving Part 1" ||
+          it.unlockSourceLabel == "Thanksgiving Part 2" ||
           it.unlockSourceLabel == "November Pass" ||
           it.unlockSourceLabel == "November Pass VIP" ||
           it.unlockSourceLabel == "Gem Vault")
@@ -1490,6 +2412,9 @@ object GameCatalog {
     return accessories.find { it.id == accessoryId }?.let {
       it.isEventExclusive &&
         (it.unlockSourceLabel == "Limited Event" ||
+          it.unlockSourceLabel == "Thanksgiving Part 1" ||
+          it.unlockSourceLabel == "Thanksgiving Part 2" ||
+          it.unlockSourceLabel == "December 1st Teaser" ||
           it.unlockSourceLabel == "November Pass" ||
           it.unlockSourceLabel == "November Pass VIP" ||
           it.unlockSourceLabel == "Gem Vault")
@@ -1498,9 +2423,9 @@ object GameCatalog {
 
   const val NOVEMBER_PASS_MAX_TIER = 30
   const val NOVEMBER_PASS_FREE_BASE_XP = 100L
-  const val NOVEMBER_PASS_FREE_GROWTH = 1.15
+  const val NOVEMBER_PASS_FREE_GROWTH = 1.05
   const val NOVEMBER_PASS_VIP_BASE_XP = 500L
-  const val NOVEMBER_PASS_VIP_GROWTH = 1.30
+  const val NOVEMBER_PASS_VIP_GROWTH = 1.15
   const val NOVEMBER_PASS_XP_PER_TIER = 100L
   const val NOVEMBER_PASS_VIP_SHARD_COST = 1L
   const val NOVEMBER_PASS_VIP_REQUIRED_UPGRADES = 100L
@@ -1508,7 +2433,13 @@ object GameCatalog {
   const val GOLDEN_TOUCH_SKIN_ID = "golden_touch_cat"
   const val GOLDEN_TOUCH_INTERVAL_MS = 30L * 60L * 1000L
   const val GOLDEN_RAIN_DURATION_MS = 3L * 60L * 1000L
-  const val GOLDEN_RAIN_MULTIPLIER = 4.0
+  const val GOLDEN_RAIN_MULTIPLIER = 2.0
+
+  fun isNovemberPassCompleted(passState: BattlePassState): Boolean {
+    val freeDone = freeTierFromXp(passState.passXp) >= NOVEMBER_PASS_MAX_TIER
+    val vipDone = !passState.vipUnlocked || vipTierFromXp(passState.passXp) >= NOVEMBER_PASS_MAX_TIER
+    return freeDone && vipDone
+  }
 
   val novemberPassTiers: List<BattlePassTierDef> =
     (1..NOVEMBER_PASS_MAX_TIER).map { tier ->
@@ -1529,8 +2460,8 @@ object GameCatalog {
           20 ->
             BattlePassRewardItem(
               kind = PassRewardKind.GEM,
-              label = "+2 Rare Gems",
-              amount = 2L,
+              label = "+1 Rare Gem",
+              amount = 1L,
             )
           5, 15, 25 -> {
             val upg = upgrades[(tier / 5) % upgrades.size]
@@ -1568,14 +2499,14 @@ object GameCatalog {
           5 ->
             BattlePassRewardItem(
               kind = PassRewardKind.GEM,
-              label = "+2 Rare Gems",
-              amount = 2L,
+              label = "+1 Rare Gem",
+              amount = 1L,
             )
           15 ->
             BattlePassRewardItem(
               kind = PassRewardKind.GEM,
-              label = "+3 Rare Gems",
-              amount = 3L,
+              label = "+2 Rare Gems",
+              amount = 2L,
             )
           10 ->
             BattlePassRewardItem(
@@ -1879,6 +2810,16 @@ object GameCatalog {
   const val VAULT_KEEPER_KICKOUT_TAPS = 7
   const val VAULT_KICKOUT_DURATION_MS = 3L * 60L * 1000L
 
+  const val CAT_COMPUTER_RIDDLE =
+    "Silent I stalk beneath the sunbeam, with nine lives to spare and whiskers to twitch. Even the Dog Vault Keeper guards his PC from my kind's doom. What 3-letter creature am I?"
+  const val CAT_COMPUTER_HINT =
+    "Hint: 3 letters — look at who you pet every day in the Sanctuary."
+
+  fun isValidCatComputerPassword(attempt: String): Boolean {
+    val clean = attempt.trim().lowercase(Locale.US)
+    return clean == "cat" || clean == "cats" || clean == "gato"
+  }
+
   val vaultKeeperWarnings: List<String> =
     listOf(
       "The World Of Cats is ending soon... The Hackers will destroy everything!",
@@ -1893,6 +2834,9 @@ object GameCatalog {
     if (theme.isFree) return true to null
     if (theme == AppColorTheme.HACKER_PROTOCOL) {
       return false to "Unlock by angering the Dog Vault Keeper in the Secret Code Vault!"
+    }
+    if (theme.turkeyCost > 0L) {
+      return false to "Unlock in Thanksgiving Festival Shop with ${theme.turkeyCost} Turkeys!"
     }
     if (theme.eventCost <= 0L) {
       return false to "Unlock via ${theme.unlockSourceLabel} in Daily Rewards!"
@@ -1919,27 +2863,7 @@ object GameCatalog {
   }
 
   fun currentPeriodicEvent(nowMillis: Long = System.currentTimeMillis()): Pair<LimitedEventDef, Long> {
-    val nov18End =
-      Calendar.getInstance().apply {
-        set(2026, Calendar.NOVEMBER, 18, 23, 59, 59)
-        set(Calendar.MILLISECOND, 999)
-      }.timeInMillis
-    val nov30End =
-      Calendar.getInstance().apply {
-        set(2026, Calendar.NOVEMBER, 30, 23, 59, 59)
-        set(Calendar.MILLISECOND, 999)
-      }.timeInMillis
-
-    return if (nowMillis <= nov18End) {
-      periodicEvents[0] to (nov18End - nowMillis).coerceAtLeast(1000L)
-    } else if (nowMillis <= nov30End) {
-      periodicEvents[1] to (nov30End - nowMillis).coerceAtLeast(1000L)
-    } else {
-      val periodMillis = 72L * 60L * 60L * 1000L
-      val index = ((nowMillis / periodMillis) % periodicEvents.size).toInt()
-      val remainingMillis = periodMillis - (nowMillis % periodMillis)
-      periodicEvents[index] to remainingMillis
-    }
+    return periodicEvents.first() to millisUntilNextEpochHour(nowMillis)
   }
 
   fun evaluateMoonlightWindow(
@@ -1984,8 +2908,8 @@ object GameCatalog {
     val bonusShards = if (safeDay % 30L == 0L) 1L else 0L
     val bonusGems =
       when (slotDay) {
-        14 -> 5L + (cycleIndex - 1L).coerceAtMost(5L)
-        7 -> 2L
+        14 -> 2L + (cycleIndex - 1L).coerceAtMost(3L)
+        7 -> 1L
         else -> 0L
       }
     val bonusUpgradeLevel =
@@ -2028,10 +2952,14 @@ object GameCatalog {
     effectivePps: Long,
     isHardcore: Boolean,
     hasAscended: Boolean,
+    unlockedAscensionIds: List<String> = emptyList(),
   ): OfflineEarningsReport? {
     if (elapsedMillis < MIN_OFFLINE_THRESHOLD_MS) return null
-    val cappedSeconds = (elapsedMillis / 1000L).coerceIn(1L, MAX_OFFLINE_SECONDS)
-    val efficiencyPercent = if (hasAscended) 75 else 50
+    val hasCatnap = "asc_offline_mastery" in unlockedAscensionIds
+    val maxSeconds = if (hasCatnap) MAX_OFFLINE_SECONDS * 2L else MAX_OFFLINE_SECONDS
+    val cappedSeconds = (elapsedMillis / 1000L).coerceIn(1L, maxSeconds)
+    val baseEfficiency = if (hasAscended) 75 else 50
+    val efficiencyPercent = (baseEfficiency + (if (hasCatnap) 15 else 0)).coerceAtMost(95)
     val earned =
       if (effectivePps <= 0L) 0L
       else (effectivePps * cappedSeconds * (efficiencyPercent / 100.0)).roundToLong().coerceAtLeast(1L)
@@ -2043,6 +2971,33 @@ object GameCatalog {
       efficiencyPercent = efficiencyPercent,
       ppsRateUsed = effectivePps,
     )
+  }
+
+  const val ADMIN_EMAIL = "silvestrecastaneda9@gmail.com"
+
+  fun isAdminEmail(email: String?): Boolean {
+    return email?.trim()?.equals(ADMIN_EMAIL, ignoreCase = true) == true
+  }
+
+  fun existStatId(itemType: String, itemId: String): String {
+    val prefix =
+      when (itemType.uppercase(Locale.US)) {
+        "PATTERN" -> "pat_"
+        "ACCESSORY" -> "acc_"
+        "THEME" -> "thm_"
+        "BACKGROUND" -> "bg_"
+        else -> "itm_"
+      }
+    return prefix + itemId
+  }
+
+  fun limitedTimeCatalogRefs(): List<Pair<String, String>> {
+    val refs = mutableListOf<Pair<String, String>>()
+    patterns.filter { it.isEventExclusive }.forEach { refs.add(existStatId("PATTERN", it.id) to "PATTERN") }
+    accessories.filter { it.isEventExclusive }.forEach { refs.add(existStatId("ACCESSORY", it.id) to "ACCESSORY") }
+    AppColorTheme.entries.filter { !it.isFree }.forEach { refs.add(existStatId("THEME", it.id) to "THEME") }
+    backgrounds.filter { it.isEventExclusive }.forEach { refs.add(existStatId("BACKGROUND", it.id) to "BACKGROUND") }
+    return refs
   }
 
   fun formatElapsedDuration(millis: Long): String {

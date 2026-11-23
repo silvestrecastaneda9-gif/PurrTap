@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">PurrTap</string>
+    <string name="widget_sanctuary_label">PurrTap Sanctuary</string>
+    <string name="widget_sanctuary_description">Live Purrs balance, +Tap/+PPS, Gems, Daily streak &amp; instant home-screen petting.</string>
+    <string name="widget_mini_label">PurrTap Mini Cat</string>
+    <string name="widget_mini_description">Compact companion widget with Purrs counter and one-tap home-screen petting.</string>
 </resources>

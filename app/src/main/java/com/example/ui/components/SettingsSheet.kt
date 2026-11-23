@@ -1,8 +1,6 @@
 package com.example.ui.components
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,34 +19,43 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.LockClock
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Pets
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SettingsBrightness
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.UploadFile
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.ViewCompact
+import androidx.compose.material.icons.rounded.ViewSidebar
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.widget.PurrWidgetUpdater
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -56,18 +63,12 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.Diamond
-import androidx.compose.material.icons.rounded.LockClock
-import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,9 +77,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.audio.MusicTrack
+import com.example.audio.MusicPlaybackStatus
 import com.example.data.local.AppSettingsState
 import com.example.data.model.GameCatalog
+import com.example.data.model.NavigationLayoutFormat
 import com.example.ui.theme.AppColorTheme
 import com.example.ui.theme.ThemeMode
 import com.example.ui.viewmodel.PurrGameUiState
@@ -86,14 +88,15 @@ import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsSheet(
   uiState: PurrGameUiState,
   settings: AppSettingsState,
+  playbackStatus: MusicPlaybackStatus = MusicPlaybackStatus(),
   onSelectThemeMode: (ThemeMode) -> Unit,
+  onSelectNavigationFormat: (NavigationLayoutFormat) -> Unit = {},
   onSelectColorTheme: (AppColorTheme) -> Unit,
   onToggleSfx: (Boolean) -> Unit,
   onSfxVolumeChange: (Float) -> Unit,
@@ -101,22 +104,28 @@ fun SettingsSheet(
   onToggleMusic: () -> Unit,
   onSelectTrackById: (String) -> Unit,
   onSkipTrack: (Int) -> Unit,
+  onSeekTo: (Long) -> Unit = {},
+  onCycleRepeatMode: () -> Unit = {},
+  onToggleShuffle: () -> Unit = {},
+  onSetPlaybackSpeed: (Float) -> Unit = {},
+  onSetSleepTimer: (Int) -> Unit = {},
   onMusicVolumeChange: (Float) -> Unit,
   onUploadAudioUri: (Uri) -> Unit,
   onRemoveCustomTrack: (String) -> Unit,
   onOpenSignInOptions: () -> Unit = {},
+  onOpenProfileEditor: () -> Unit = {},
+  onOpenAdminPanel: () -> Unit = {},
+  onDeleteAllData: () -> Unit = {},
   onOpenSecretVault: () -> Unit = {},
+  onOpenWidgetsGallery: () -> Unit = {},
+  onNotifyToast: (String) -> Unit = {},
   onDismiss: () -> Unit,
 ) {
+  val context = LocalContext.current
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var selectedTab by remember { mutableIntStateOf(0) }
-  val audioPickerLauncher =
-    rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri ->
-      if (uri != null) {
-        onUploadAudioUri(uri)
-      }
-    }
-  val (currentTrackTitle, currentTrackSubtitle) = settings.currentTrackTitleAndSubtitle()
+  var showDeleteConfirmation by remember { mutableStateOf(false) }
+  var deleteConfirmInput by remember { mutableStateOf("") }
 
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
     Column(
@@ -236,7 +245,50 @@ fun SettingsSheet(
         }
       }
 
-      // 2. Color Themes (Free + Event & Daily Unlocked)
+      // 1B. Navigation Layout Format (Bottom Bar / Side Rail / Clean Floating Dock)
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          text = "Navigation Layout Format",
+          style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+          text = settings.navigationFormat.subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+          NavigationLayoutFormat.entries.forEachIndexed { index, format ->
+            val icon =
+              when (format) {
+                NavigationLayoutFormat.BOTTOM_BAR -> Icons.Rounded.ViewAgenda
+                NavigationLayoutFormat.SIDE_RAIL -> Icons.Rounded.ViewSidebar
+                NavigationLayoutFormat.CLEAN_FLOATING -> Icons.Rounded.ViewCompact
+              }
+            SegmentedButton(
+              selected = settings.navigationFormat == format,
+              onClick = { onSelectNavigationFormat(format) },
+              shape =
+                SegmentedButtonDefaults.itemShape(
+                  index = index,
+                  count = NavigationLayoutFormat.entries.size,
+                ),
+              icon = {
+                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(16.dp))
+              },
+              modifier = Modifier.testTag("nav_format_${format.id}"),
+            ) {
+              Text(
+                text = format.label,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+        }
+      }
+
+      // 2. Color Themes (Free Themes Only — Limited Themes live in Inventory)
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -253,12 +305,17 @@ fun SettingsSheet(
             style = MaterialTheme.typography.titleMedium,
           )
         }
+        Text(
+          text = "Free Sanctuary palettes. Limited-time & event themes are organized in More → Inventory.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         FlowRow(
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
           modifier = Modifier.fillMaxWidth(),
         ) {
-          AppColorTheme.entries.forEach { palette ->
+          AppColorTheme.freeThemes.forEach { palette ->
             val selected = settings.colorTheme == palette
             val isUnlocked = palette.isFree || palette.id in settings.unlockedColorThemes
             Card(
@@ -313,6 +370,14 @@ fun SettingsSheet(
                       if (isUnlocked) MaterialTheme.colorScheme.primary
                       else MaterialTheme.colorScheme.onSurfaceVariant,
                   )
+                  if (!palette.isFree) {
+                    Text(
+                      text = "${uiState.existCountFor("THEME", palette.id)} Exist",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.tertiary,
+                      fontWeight = FontWeight.SemiBold,
+                    )
+                  }
                 }
                 if (selected) {
                   Icon(
@@ -335,165 +400,7 @@ fun SettingsSheet(
         }
       }
 
-      // 3. Built-In & Custom Audio Music Player
-      Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth().testTag("built_in_music_player_card"),
-      ) {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(14.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              modifier = Modifier.weight(1f),
-            ) {
-              Surface(
-                color = MaterialTheme.colorScheme.secondary,
-                shape = CircleShape,
-                modifier = Modifier.size(38.dp),
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    imageVector =
-                      if (settings.isMusicPlaying) Icons.Rounded.GraphicEq
-                      else Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondary,
-                  )
-                }
-              }
-              Column {
-                Text(
-                  text = "Built-In Music Player",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                )
-                Text(
-                  text = currentTrackTitle,
-                  style = MaterialTheme.typography.titleMedium,
-                  color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Text(
-                  text = currentTrackSubtitle,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                )
-              }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              IconButton(
-                onClick = { onSkipTrack(-1) },
-                modifier = Modifier.testTag("music_prev_button"),
-              ) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous track")
-              }
-              FilledIconButton(
-                onClick = onToggleMusic,
-                modifier = Modifier.size(48.dp).testTag("music_play_pause_button"),
-              ) {
-                Icon(
-                  imageVector =
-                    if (settings.isMusicPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                  contentDescription = if (settings.isMusicPlaying) "Pause music" else "Play music",
-                )
-              }
-              IconButton(
-                onClick = { onSkipTrack(1) },
-                modifier = Modifier.testTag("music_next_button"),
-              ) {
-                Icon(Icons.Rounded.SkipNext, contentDescription = "Next track")
-              }
-            }
-          }
-
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            MusicTrack.entries.forEach { track ->
-              FilterChip(
-                selected = settings.selectedTrackId == track.id,
-                onClick = { onSelectTrackById(track.id) },
-                label = { Text(track.title, style = MaterialTheme.typography.labelMedium) },
-                modifier = Modifier.testTag("music_track_${track.id}"),
-              )
-            }
-            settings.customTracks.forEach { custom ->
-              InputChip(
-                selected = settings.selectedTrackId == custom.id,
-                onClick = { onSelectTrackById(custom.id) },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.Rounded.AudioFile,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = { onRemoveCustomTrack(custom.id) },
-                    modifier = Modifier.size(20.dp),
-                  ) {
-                    Icon(
-                      imageVector = Icons.Rounded.DeleteOutline,
-                      contentDescription = "Remove ${custom.title}",
-                      modifier = Modifier.size(15.dp),
-                    )
-                  }
-                },
-                label = { Text(custom.title, style = MaterialTheme.typography.labelMedium) },
-                modifier = Modifier.testTag("custom_track_${custom.id}"),
-              )
-            }
-          }
-
-          FilledTonalButton(
-            onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("upload_audio_button"),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.UploadFile,
-              contentDescription = null,
-              modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("Upload Your Own Audio File")
-          }
-
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.VolumeUp,
-              contentDescription = "Music volume",
-              modifier = Modifier.size(18.dp),
-              tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Slider(
-              value = settings.musicVolume,
-              onValueChange = onMusicVolumeChange,
-              valueRange = 0f..1f,
-              modifier = Modifier.weight(1f).testTag("music_volume_slider"),
-            )
-            Text(
-              text = "${(settings.musicVolume * 100).roundToInt()}%",
-              style = MaterialTheme.typography.labelMedium,
-            )
-          }
-        }
-      }
-
-      // 4. Cat Purr & Meow Sound Effects
+      // 3. Cat Purr & Meow Sound Effects
       Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = MaterialTheme.shapes.large,
@@ -539,7 +446,7 @@ fun SettingsSheet(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Icon(
-              imageVector = Icons.Rounded.VolumeUp,
+              imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
               contentDescription = "SFX volume",
               modifier = Modifier.size(18.dp),
             )
@@ -557,6 +464,153 @@ fun SettingsSheet(
             ) {
               Text("Test")
             }
+          }
+        }
+      }
+
+      // 4B. Public Profile & Privacy
+      Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(14.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Public,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+            )
+            Column {
+              Text(
+                text = "Public Profile & Privacy",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+              )
+              Text(
+                text =
+                  if (uiState.profile.statsPublic) "Stats Public • Custom PFP & Banner"
+                  else "Stats Private • Locked on Leaderboard",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+          OutlinedButton(
+            onClick = onOpenProfileEditor,
+            modifier = Modifier.height(48.dp).testTag("settings_public_profile_button"),
+          ) {
+            Text("Edit")
+          }
+        }
+      }
+
+      // 4C. Verified Admin Panel (strictly email-gated)
+      if (uiState.isAdmin) {
+        Card(
+          onClick = onOpenAdminPanel,
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+          border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.tertiary),
+          shape = MaterialTheme.shapes.large,
+          modifier = Modifier.fillMaxWidth().testTag("settings_admin_panel_button"),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              modifier = Modifier.weight(1f),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.AdminPanelSettings,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+              )
+              Column {
+                Text(
+                  text = "Sanctuary Admin Panel",
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                  text = "Moderation, Global Messages, Weather & Currency Grants",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f),
+                )
+              }
+            }
+            Text(
+              text = "OPEN",
+              style = MaterialTheme.typography.labelMedium,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.tertiary,
+            )
+          }
+        }
+      }
+
+      // 4D. Danger Zone — Fresh Start Wipe (placed above Secret Vault at bottom)
+      Card(
+        colors =
+          CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f)
+          ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(14.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.DeleteForever,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.error,
+            )
+            Column {
+              Text(
+                text = "Danger Zone • Fresh Start",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+              )
+              Text(
+                text = "Delete all progress, currency, themes, custom tracks & cloud profile",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+              )
+            }
+          }
+          OutlinedButton(
+            onClick = {
+              deleteConfirmInput = ""
+              showDeleteConfirmation = true
+            },
+            colors =
+              ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            modifier = Modifier.height(48.dp).testTag("danger_zone_delete_button"),
+          ) {
+            Text("Delete All")
           }
         }
       }
@@ -641,6 +695,58 @@ fun SettingsSheet(
 
       Spacer(modifier = Modifier.height(14.dp))
     }
+  }
+
+  if (showDeleteConfirmation) {
+    AlertDialog(
+      onDismissRequest = { showDeleteConfirmation = false },
+      icon = {
+        Icon(
+          imageVector = Icons.Rounded.Warning,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.error,
+        )
+      },
+      title = { Text("Delete All Sanctuary Data?") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(
+            text =
+              "This permanently wipes your Purrs, Rebirths, Ascensions, Gato Shards, Rare Gems, Battle Pass, unlocked Themes, custom tracks, and Leaderboard entry so you can start completely fresh.",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          OutlinedTextField(
+            value = deleteConfirmInput,
+            onValueChange = { deleteConfirmInput = it },
+            label = { Text("Type DELETE to confirm") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("confirm_delete_all_input"),
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showDeleteConfirmation = false
+            onDeleteAllData()
+          },
+          enabled = deleteConfirmInput.trim() == "DELETE",
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.error,
+              contentColor = MaterialTheme.colorScheme.onError,
+            ),
+          modifier = Modifier.testTag("confirm_delete_all_button"),
+        ) {
+          Text("Wipe & Start Fresh")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showDeleteConfirmation = false }) {
+          Text("Cancel")
+        }
+      },
+    )
   }
 }
 

@@ -13,13 +13,18 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.audio.CustomMusicTrack
 import com.example.audio.MusicTrack
+import com.example.audio.RepeatMode
 import com.example.data.model.BattlePassState
 import com.example.data.model.ChallengeProgressState
+import com.example.data.model.GameCatalog
+import com.example.data.model.NavigationLayoutFormat
 import com.example.data.model.PlayerStatsState
 import com.example.data.model.UserProfile
 import com.example.ui.theme.AppColorTheme
 import com.example.ui.theme.ThemeMode
+import java.io.File
 import java.nio.charset.StandardCharsets
+import kotlin.math.roundToLong
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,6 +46,10 @@ data class AppSettingsState(
   val musicVolume: Float = 0.55f,
   val selectedTrackId: String = MusicTrack.SUNLIT_WHISKERS.id,
   val customTracks: List<CustomMusicTrack> = emptyList(),
+  val repeatMode: RepeatMode = RepeatMode.ALL,
+  val shuffleEnabled: Boolean = false,
+  val playbackSpeed: Float = 1.0f,
+  val navigationFormat: NavigationLayoutFormat = NavigationLayoutFormat.BOTTOM_BAR,
   val accountMode: String = "guest",
   val localAccountCode: String = "",
   val localAccountPin: String = "",
@@ -61,6 +70,24 @@ data class DecodedSanctuarySnapshot(
   val unlockedThemes: List<String>,
 )
 
+data class WidgetSnapshotData(
+  val catName: String = "Mochi",
+  val coatName: String = "Classic Tabby",
+  val activeBalance: Long = 0L,
+  val currencyShortLabel: String = "Purrs",
+  val isHardcore: Boolean = false,
+  val clickPower: Long = 1L,
+  val pps: Long = 0L,
+  val gems: Long = 0L,
+  val dailyStreak: Long = 0L,
+  val canClaimDaily: Boolean = true,
+  val goldenRainActive: Boolean = false,
+  val gemFrenzyActive: Boolean = false,
+  val weatherLabel: String = "Sunny",
+  val weatherTempC: Int = 22,
+  val totalPets: Long = 0L,
+)
+
 class LocalGameStorage(context: Context) {
   private val dataStore = context.applicationContext.purrDataStore
 
@@ -75,8 +102,10 @@ class LocalGameStorage(context: Context) {
       selectedCatName = prefs[KEY_CAT_NAME] ?: "Mochi",
       selectedPatternId = prefs[KEY_PATTERN_ID] ?: "tabby",
       selectedAccessoryId = prefs[KEY_ACCESSORY_ID] ?: "none",
+      selectedBackgroundId = prefs[KEY_BACKGROUND_ID] ?: "cozy_parlor",
       unlockedPatterns = decodeStringList(prefs[KEY_UNLOCKED_PATTERNS], listOf("tabby")),
       unlockedAccessories = decodeStringList(prefs[KEY_UNLOCKED_ACCESSORIES], listOf("none")),
+      unlockedBackgrounds = decodeStringList(prefs[KEY_UNLOCKED_BACKGROUNDS], listOf("cozy_parlor")),
       upgradeLevels = decodeUpgradeMap(prefs[KEY_UPGRADE_LEVELS]),
       dailyStreak = prefs[KEY_DAILY_STREAK] ?: 0L,
       lastDailyClaimEpochDay = prefs[KEY_LAST_DAILY_DAY] ?: 0L,
@@ -86,6 +115,10 @@ class LocalGameStorage(context: Context) {
       eventPurrsEarned = prefs[KEY_EVENT_PURRS] ?: 0L,
       preferredCity = prefs[KEY_PREFERRED_CITY] ?: "Sanctuary Sky",
       weatherCheckedCount = prefs[KEY_WEATHER_COUNT] ?: 0L,
+      statsPublic = prefs[KEY_STATS_PUBLIC] ?: true,
+      bio = prefs[KEY_BIO] ?: "",
+      avatarBase64 = prefs[KEY_AVATAR_BASE64] ?: "",
+      bannerBase64 = prefs[KEY_BANNER_BASE64] ?: "",
     )
   }
 
@@ -99,8 +132,10 @@ class LocalGameStorage(context: Context) {
       prefs[KEY_CAT_NAME] = profile.selectedCatName
       prefs[KEY_PATTERN_ID] = profile.selectedPatternId
       prefs[KEY_ACCESSORY_ID] = profile.selectedAccessoryId
+      prefs[KEY_BACKGROUND_ID] = profile.selectedBackgroundId
       prefs[KEY_UNLOCKED_PATTERNS] = encodeStringList(profile.unlockedPatterns)
       prefs[KEY_UNLOCKED_ACCESSORIES] = encodeStringList(profile.unlockedAccessories)
+      prefs[KEY_UNLOCKED_BACKGROUNDS] = encodeStringList(profile.unlockedBackgrounds)
       prefs[KEY_UPGRADE_LEVELS] = encodeUpgradeMap(profile.upgradeLevels)
       prefs[KEY_DAILY_STREAK] = profile.dailyStreak.coerceAtLeast(0L)
       prefs[KEY_LAST_DAILY_DAY] = profile.lastDailyClaimEpochDay.coerceAtLeast(0L)
@@ -110,6 +145,21 @@ class LocalGameStorage(context: Context) {
       prefs[KEY_EVENT_PURRS] = profile.eventPurrsEarned.coerceAtLeast(0L)
       prefs[KEY_PREFERRED_CITY] = profile.preferredCity
       prefs[KEY_WEATHER_COUNT] = profile.weatherCheckedCount.coerceAtLeast(0L)
+      prefs[KEY_STATS_PUBLIC] = profile.statsPublic
+      prefs[KEY_BIO] = profile.bio.take(140)
+      prefs[KEY_AVATAR_BASE64] = profile.avatarBase64.take(60_000)
+      prefs[KEY_BANNER_BASE64] = profile.bannerBase64.take(120_000)
+    }
+  }
+
+  suspend fun loadLastSeenBlogVersion(): String {
+    val prefs = dataStore.data.first()
+    return prefs[KEY_LAST_SEEN_BLOG_VERSION] ?: ""
+  }
+
+  suspend fun saveLastSeenBlogVersion(version: String) {
+    dataStore.edit { prefs ->
+      prefs[KEY_LAST_SEEN_BLOG_VERSION] = version
     }
   }
 
@@ -149,6 +199,23 @@ class LocalGameStorage(context: Context) {
       gemFrenzyRemainingMillis = (prefs[KEY_GEM_FRENZY_MS] ?: 0L).coerceAtLeast(0L),
       hackerVaultUnlocked = prefs[KEY_VAULT_UNLOCKED] ?: false,
       vaultKickoutUntilMillis = (prefs[KEY_VAULT_KICKOUT_UNTIL_MS] ?: 0L).coerceAtLeast(0L),
+      dogCrashOmenSeen = prefs[KEY_DOG_CRASH_OMEN_SEEN] ?: false,
+      trillionCutsceneSeen = prefs[KEY_TRILLION_CUTSCENE_SEEN] ?: false,
+      citadelBossGlitchSeen = prefs[KEY_CITADEL_BOSS_GLITCH_SEEN] ?: false,
+      catComputerUnlocked = prefs[KEY_CAT_COMPUTER_UNLOCKED] ?: false,
+      dogComputerSearched = prefs[KEY_DOG_COMPUTER_SEARCHED] ?: false,
+      turkeys = (prefs[KEY_TURKEYS] ?: 0L).coerceAtLeast(0L),
+      totalTurkeysEarned = (prefs[KEY_TOTAL_TURKEYS] ?: 0L).coerceAtLeast(0L),
+      festivalHourEpoch = (prefs[KEY_FESTIVAL_HOUR] ?: 0L).coerceAtLeast(0L),
+      festivalIsMega = prefs[KEY_FESTIVAL_MEGA] ?: false,
+      turkeyGatoTalkCount = (prefs[KEY_GATO_TALKS] ?: 0L).toInt().coerceAtLeast(0),
+      part2MapUnlocked = prefs[KEY_PART2_MAP] ?: false,
+      festivalQuestHourEpoch = (prefs[KEY_FEST_Q_HOUR] ?: 0L).coerceAtLeast(0L),
+      claimedFestivalQuestIds = decodeStringList(prefs[KEY_FEST_Q_CLAIMED], emptyList()),
+      festHourPets = (prefs[KEY_FEST_H_PETS] ?: 0L).coerceAtLeast(0L),
+      festHourTurkeysTapped = (prefs[KEY_FEST_H_TURKEYS] ?: 0L).coerceAtLeast(0L),
+      festHourUpgradesBought = (prefs[KEY_FEST_H_UPGRADES] ?: 0L).coerceAtLeast(0L),
+      festHourWeatherShifts = (prefs[KEY_FEST_H_WEATHER] ?: 0L).coerceAtLeast(0L),
     )
   }
 
@@ -170,6 +237,23 @@ class LocalGameStorage(context: Context) {
       prefs[KEY_GEM_FRENZY_MS] = state.gemFrenzyRemainingMillis.coerceAtLeast(0L)
       prefs[KEY_VAULT_UNLOCKED] = state.hackerVaultUnlocked
       prefs[KEY_VAULT_KICKOUT_UNTIL_MS] = state.vaultKickoutUntilMillis.coerceAtLeast(0L)
+      prefs[KEY_DOG_CRASH_OMEN_SEEN] = state.dogCrashOmenSeen
+      prefs[KEY_TRILLION_CUTSCENE_SEEN] = state.trillionCutsceneSeen
+      prefs[KEY_CITADEL_BOSS_GLITCH_SEEN] = state.citadelBossGlitchSeen
+      prefs[KEY_CAT_COMPUTER_UNLOCKED] = state.catComputerUnlocked
+      prefs[KEY_DOG_COMPUTER_SEARCHED] = state.dogComputerSearched
+      prefs[KEY_TURKEYS] = state.turkeys.coerceAtLeast(0L)
+      prefs[KEY_TOTAL_TURKEYS] = state.totalTurkeysEarned.coerceAtLeast(0L)
+      prefs[KEY_FESTIVAL_HOUR] = state.festivalHourEpoch.coerceAtLeast(0L)
+      prefs[KEY_FESTIVAL_MEGA] = state.festivalIsMega
+      prefs[KEY_GATO_TALKS] = state.turkeyGatoTalkCount.toLong().coerceAtLeast(0L)
+      prefs[KEY_PART2_MAP] = state.part2MapUnlocked
+      prefs[KEY_FEST_Q_HOUR] = state.festivalQuestHourEpoch.coerceAtLeast(0L)
+      prefs[KEY_FEST_Q_CLAIMED] = encodeStringList(state.claimedFestivalQuestIds)
+      prefs[KEY_FEST_H_PETS] = state.festHourPets.coerceAtLeast(0L)
+      prefs[KEY_FEST_H_TURKEYS] = state.festHourTurkeysTapped.coerceAtLeast(0L)
+      prefs[KEY_FEST_H_UPGRADES] = state.festHourUpgradesBought.coerceAtLeast(0L)
+      prefs[KEY_FEST_H_WEATHER] = state.festHourWeatherShifts.coerceAtLeast(0L)
     }
   }
 
@@ -238,6 +322,7 @@ class LocalGameStorage(context: Context) {
       seasonId = "november_pass",
       passXp = (prefs[KEY_PASS_XP] ?: 0L).coerceAtLeast(0L),
       vipUnlocked = prefs[KEY_PASS_VIP_UNLOCKED] ?: false,
+      passCompletions = (prefs[KEY_PASS_COMPLETIONS] ?: 0L).coerceAtLeast(0L),
       claimedFreeTiers = decodeIntList(prefs[KEY_PASS_CLAIMED_FREE]),
       claimedVipTiers = decodeIntList(prefs[KEY_PASS_CLAIMED_VIP]),
       goldenTouchEquippedMillis = (prefs[KEY_PASS_GOLDEN_EQUIPPED_MS] ?: 0L).coerceAtLeast(0L),
@@ -257,6 +342,7 @@ class LocalGameStorage(context: Context) {
     dataStore.edit { prefs ->
       prefs[KEY_PASS_XP] = state.passXp.coerceAtLeast(0L)
       prefs[KEY_PASS_VIP_UNLOCKED] = state.vipUnlocked
+      prefs[KEY_PASS_COMPLETIONS] = state.passCompletions.coerceAtLeast(0L)
       prefs[KEY_PASS_CLAIMED_FREE] = encodeIntList(state.claimedFreeTiers)
       prefs[KEY_PASS_CLAIMED_VIP] = encodeIntList(state.claimedVipTiers)
       prefs[KEY_PASS_GOLDEN_EQUIPPED_MS] = state.goldenTouchEquippedMillis.coerceAtLeast(0L)
@@ -296,6 +382,13 @@ class LocalGameStorage(context: Context) {
       musicVolume = (prefs[KEY_MUSIC_VOLUME] ?: 0.55f).coerceIn(0f, 1f),
       selectedTrackId = validTrackId,
       customTracks = customTracks,
+      repeatMode = RepeatMode.fromId(prefs[KEY_MUSIC_REPEAT_MODE] ?: RepeatMode.ALL.id),
+      shuffleEnabled = prefs[KEY_MUSIC_SHUFFLE] ?: false,
+      playbackSpeed = (prefs[KEY_MUSIC_SPEED] ?: 1.0f).coerceIn(0.75f, 1.5f),
+      navigationFormat =
+        NavigationLayoutFormat.fromId(
+          prefs[KEY_NAVIGATION_FORMAT] ?: NavigationLayoutFormat.BOTTOM_BAR.id
+        ),
       accountMode = prefs[KEY_ACCOUNT_MODE] ?: "guest",
       localAccountCode = prefs[KEY_LOCAL_ACCOUNT_CODE] ?: "",
       localAccountPin = prefs[KEY_LOCAL_ACCOUNT_PIN] ?: "",
@@ -313,9 +406,163 @@ class LocalGameStorage(context: Context) {
       prefs[KEY_MUSIC_VOLUME] = settings.musicVolume
       prefs[KEY_MUSIC_TRACK] = settings.selectedTrackId
       prefs[KEY_CUSTOM_TRACKS] = encodeCustomTracks(settings.customTracks)
+      prefs[KEY_MUSIC_REPEAT_MODE] = settings.repeatMode.id
+      prefs[KEY_MUSIC_SHUFFLE] = settings.shuffleEnabled
+      prefs[KEY_MUSIC_SPEED] = settings.playbackSpeed
+      prefs[KEY_NAVIGATION_FORMAT] = settings.navigationFormat.id
       prefs[KEY_ACCOUNT_MODE] = settings.accountMode
       prefs[KEY_LOCAL_ACCOUNT_CODE] = settings.localAccountCode
       prefs[KEY_LOCAL_ACCOUNT_PIN] = settings.localAccountPin
+    }
+  }
+
+  suspend fun loadLimitedExistCounts(): Map<String, Long> {
+    val prefs = dataStore.data.first()
+    return decodeUpgradeMap(prefs[KEY_LOCAL_EXIST_COUNTS])
+  }
+
+  suspend fun saveLimitedExistCounts(counts: Map<String, Long>) {
+    dataStore.edit { prefs ->
+      prefs[KEY_LOCAL_EXIST_COUNTS] = encodeUpgradeMap(counts)
+    }
+  }
+
+  suspend fun loadDismissedAnnouncementId(): String {
+    val prefs = dataStore.data.first()
+    return prefs[KEY_DISMISSED_ANNOUNCEMENT_ID] ?: ""
+  }
+
+  suspend fun saveDismissedAnnouncementId(messageId: String) {
+    dataStore.edit { prefs ->
+      prefs[KEY_DISMISSED_ANNOUNCEMENT_ID] = messageId
+    }
+  }
+
+  suspend fun saveWidgetWeatherSnapshot(label: String, tempC: Int) {
+    dataStore.edit { prefs ->
+      prefs[KEY_WIDGET_WEATHER_LABEL] = label
+      prefs[KEY_WIDGET_WEATHER_TEMP] = tempC.toLong()
+    }
+  }
+
+  suspend fun loadWidgetSnapshot(nowMillis: Long = System.currentTimeMillis()): WidgetSnapshotData {
+    val prefs = dataStore.data.first()
+    val profile = loadProfile()
+    val challenge = loadChallengeProgress()
+    val pass = loadBattlePassState()
+    val weatherLabel = prefs[KEY_WIDGET_WEATHER_LABEL] ?: "Sanctuary Sky"
+    val weatherTemp = (prefs[KEY_WIDGET_WEATHER_TEMP] ?: 22L).toInt()
+    return buildWidgetSnapshot(profile, challenge, pass, weatherLabel, weatherTemp, nowMillis)
+  }
+
+  suspend fun recordWidgetPetTap(nowMillis: Long = System.currentTimeMillis()): WidgetSnapshotData {
+    val prefs = dataStore.data.first()
+    val profile = loadProfile()
+    val challenge = loadChallengeProgress()
+    val pass = loadBattlePassState()
+    val weatherLabel = prefs[KEY_WIDGET_WEATHER_LABEL] ?: "Sanctuary Sky"
+    val weatherTemp = (prefs[KEY_WIDGET_WEATHER_TEMP] ?: 22L).toInt()
+    val preSnap = buildWidgetSnapshot(profile, challenge, pass, weatherLabel, weatherTemp, nowMillis)
+    val tapGain = preSnap.clickPower.coerceAtLeast(1L)
+
+    val nextProfile =
+      profile.copy(
+        purrs = if (challenge.isHardcoreMode) profile.purrs else profile.purrs + tapGain,
+        totalPurrsEarned = profile.totalPurrsEarned + tapGain,
+        totalPets = profile.totalPets + 1L,
+        eventPurrsEarned = profile.eventPurrsEarned + tapGain,
+      )
+    val nextChallenge =
+      if (challenge.isHardcoreMode) challenge.copy(hardcorePurrs = challenge.hardcorePurrs + tapGain)
+      else challenge
+    val hourEpoch = GameCatalog.currentEpochHour(nowMillis)
+    val alignedPass =
+      if (pass.questHourEpoch != hourEpoch || pass.activeQuestIds.isEmpty()) {
+        pass.copy(
+          questHourEpoch = hourEpoch,
+          activeQuestIds = GameCatalog.selectHourlyPassQuestIds(hourEpoch),
+          claimedPassQuestIds = emptyList(),
+          hourPets = 0L,
+          hourPurrsEarned = 0L,
+          hourUpgradesBought = 0L,
+          hourWeatherShifts = 0L,
+          hourComboCrits = 0L,
+        )
+      } else {
+        pass
+      }
+    val nextPass =
+      alignedPass.copy(
+        passXp = alignedPass.passXp + 2L,
+        hourPets = alignedPass.hourPets + 1L,
+        hourPurrsEarned = alignedPass.hourPurrsEarned + tapGain,
+      )
+
+    saveProfile(nextProfile)
+    if (challenge.isHardcoreMode) {
+      saveChallengeProgress(nextChallenge)
+    }
+    saveBattlePassState(nextPass)
+    return buildWidgetSnapshot(nextProfile, nextChallenge, nextPass, weatherLabel, weatherTemp, nowMillis)
+  }
+
+  private fun buildWidgetSnapshot(
+    profile: UserProfile,
+    challenge: ChallengeProgressState,
+    pass: BattlePassState,
+    weatherLabel: String,
+    weatherTemp: Int,
+    nowMillis: Long,
+  ): WidgetSnapshotData {
+    val isHardcore = challenge.isHardcoreMode
+    val upgrades = if (isHardcore) challenge.hardcoreUpgradeLevels else profile.upgradeLevels
+    val basePps = GameCatalog.computeBasePps(upgrades)
+    val baseClick =
+      GameCatalog.computeClickPower(upgrades) +
+        if ("asc_click_supernova" in challenge.unlockedAscensionIds) (basePps * 0.10).roundToLong()
+        else 0L
+    val rebirthMult = GameCatalog.rebirthMultiplier(challenge.rebirthBonusSteps, challenge.unlockedAscensionIds)
+    val ascMult = if ("asc_golden_whiskers" in challenge.unlockedAscensionIds) 2.0 else 1.0
+    val sovereignMult = if ("asc_cosmic_sovereign" in challenge.unlockedAscensionIds) 1.5 else 1.0
+    val supernovaMult = if ("asc_click_supernova" in challenge.unlockedAscensionIds) 2.0 else 1.0
+    val symphonyMult = if ("asc_passive_symphony" in challenge.unlockedAscensionIds) 2.0 else 1.0
+    val charmMult = GameCatalog.gemCharmMultiplier(challenge.gemCharmLevel)
+    val frenzyMult = if (challenge.gemFrenzyRemainingMillis > 0L) GameCatalog.GEM_FRENZY_MULTIPLIER else 1.0
+    val goldenRainActive = pass.goldenRainRemainingMillis > 0L
+    val goldenMult = if (goldenRainActive) GameCatalog.GOLDEN_RAIN_MULTIPLIER else 1.0
+    val hcMult = if (isHardcore) GameCatalog.HARDCORE_EARNINGS_MULTIPLIER else 1.0
+    val eventMult = GameCatalog.currentPeriodicEvent(nowMillis).first.clickMultiplier
+    val totalMult = rebirthMult * ascMult * sovereignMult * charmMult * frenzyMult * goldenMult * hcMult * eventMult
+    val clickPower = (baseClick * totalMult * supernovaMult).roundToLong().coerceAtLeast(1L)
+    val pps = if (basePps <= 0L) 0L else (basePps * totalMult * symphonyMult).roundToLong().coerceAtLeast(1L)
+    val epochDay = nowMillis / 86_400_000L
+    val coatName = GameCatalog.patterns.find { it.id == profile.selectedPatternId }?.name ?: "Classic Tabby"
+    return WidgetSnapshotData(
+      catName = profile.selectedCatName,
+      coatName = coatName,
+      activeBalance = if (isHardcore) challenge.hardcorePurrs else profile.purrs,
+      currencyShortLabel = if (isHardcore) "HC Purrs" else "Purrs",
+      isHardcore = isHardcore,
+      clickPower = clickPower,
+      pps = pps,
+      gems = challenge.gems,
+      dailyStreak = profile.dailyStreak,
+      canClaimDaily = profile.lastDailyClaimEpochDay < epochDay,
+      goldenRainActive = goldenRainActive,
+      gemFrenzyActive = challenge.gemFrenzyRemainingMillis > 0L,
+      weatherLabel = weatherLabel,
+      weatherTempC = weatherTemp,
+      totalPets = profile.totalPets,
+    )
+  }
+
+  suspend fun clearAllLocalData(context: Context) {
+    dataStore.edit { prefs -> prefs.clear() }
+    runCatching {
+      val customMusicDir = File(context.applicationContext.filesDir, "custom_music")
+      if (customMusicDir.exists()) {
+        customMusicDir.deleteRecursively()
+      }
     }
   }
 
@@ -365,6 +612,15 @@ class LocalGameStorage(context: Context) {
         .put("gemCharm", challenge.gemCharmLevel)
         .put("prismLens", challenge.prismLensUnlocked)
         .put("vaultUnlocked", challenge.hackerVaultUnlocked)
+        .put("dogCrashOmenSeen", challenge.dogCrashOmenSeen)
+        .put("trillionCutsceneSeen", challenge.trillionCutsceneSeen)
+        .put("citadelBossGlitchSeen", challenge.citadelBossGlitchSeen)
+        .put("catComputerUnlocked", challenge.catComputerUnlocked)
+        .put("dogComputerSearched", challenge.dogComputerSearched)
+        .put("turkeys", challenge.turkeys)
+        .put("totalTurkeys", challenge.totalTurkeysEarned)
+        .put("gatoTalks", challenge.turkeyGatoTalkCount)
+        .put("part2Map", challenge.part2MapUnlocked)
         .put("themes", JSONArray(unlockedThemes))
     val rawBytes = root.toString().toByteArray(StandardCharsets.UTF_8)
     val encoded = Base64.encodeToString(rawBytes, Base64.NO_WRAP)
@@ -418,6 +674,15 @@ class LocalGameStorage(context: Context) {
           gemCharmLevel = obj.optLong("gemCharm", 0L).coerceAtLeast(0L),
           prismLensUnlocked = obj.optBoolean("prismLens", false),
           hackerVaultUnlocked = obj.optBoolean("vaultUnlocked", false),
+          dogCrashOmenSeen = obj.optBoolean("dogCrashOmenSeen", false),
+          trillionCutsceneSeen = obj.optBoolean("trillionCutsceneSeen", false),
+          citadelBossGlitchSeen = obj.optBoolean("citadelBossGlitchSeen", false),
+          catComputerUnlocked = obj.optBoolean("catComputerUnlocked", false),
+          dogComputerSearched = obj.optBoolean("dogComputerSearched", false),
+          turkeys = obj.optLong("turkeys", 0L).coerceAtLeast(0L),
+          totalTurkeysEarned = obj.optLong("totalTurkeys", 0L).coerceAtLeast(0L),
+          turkeyGatoTalkCount = obj.optInt("gatoTalks", 0).coerceAtLeast(0),
+          part2MapUnlocked = obj.optBoolean("part2Map", false),
         )
       val themes =
         (AppColorTheme.freeThemes.map { it.id } +
@@ -518,8 +783,11 @@ class LocalGameStorage(context: Context) {
     private val KEY_CAT_NAME = stringPreferencesKey("cat_name")
     private val KEY_PATTERN_ID = stringPreferencesKey("pattern_id")
     private val KEY_ACCESSORY_ID = stringPreferencesKey("accessory_id")
+    private val KEY_BACKGROUND_ID = stringPreferencesKey("background_id")
     private val KEY_UNLOCKED_PATTERNS = stringPreferencesKey("unlocked_patterns")
     private val KEY_UNLOCKED_ACCESSORIES = stringPreferencesKey("unlocked_accessories")
+    private val KEY_UNLOCKED_BACKGROUNDS = stringPreferencesKey("unlocked_backgrounds")
+    private val KEY_LAST_SEEN_BLOG_VERSION = stringPreferencesKey("last_seen_blog_version")
     private val KEY_UPGRADE_LEVELS = stringPreferencesKey("upgrade_levels")
     private val KEY_DAILY_STREAK = longPreferencesKey("daily_streak")
     private val KEY_LAST_DAILY_DAY = longPreferencesKey("last_daily_day")
@@ -587,10 +855,41 @@ class LocalGameStorage(context: Context) {
     private val KEY_PRISM_LENS_UNLOCKED = booleanPreferencesKey("gems_prism_lens")
     private val KEY_GEM_FRENZY_MS = longPreferencesKey("gems_frenzy_ms")
     private val KEY_VAULT_UNLOCKED = booleanPreferencesKey("vault_hacker_unlocked")
+    private val KEY_DOG_CRASH_OMEN_SEEN = booleanPreferencesKey("dog_crash_omen_seen")
+    private val KEY_TRILLION_CUTSCENE_SEEN = booleanPreferencesKey("trillion_cutscene_seen")
+    private val KEY_CITADEL_BOSS_GLITCH_SEEN = booleanPreferencesKey("citadel_boss_glitch_seen")
+    private val KEY_CAT_COMPUTER_UNLOCKED = booleanPreferencesKey("cat_computer_unlocked")
+    private val KEY_DOG_COMPUTER_SEARCHED = booleanPreferencesKey("dog_computer_searched")
     private val KEY_VAULT_KICKOUT_UNTIL_MS = longPreferencesKey("vault_kickout_until_ms")
 
     private val KEY_ACCOUNT_MODE = stringPreferencesKey("account_mode")
     private val KEY_LOCAL_ACCOUNT_CODE = stringPreferencesKey("local_account_code")
     private val KEY_LOCAL_ACCOUNT_PIN = stringPreferencesKey("local_account_pin")
+    private val KEY_STATS_PUBLIC = booleanPreferencesKey("profile_stats_public")
+    private val KEY_BIO = stringPreferencesKey("profile_bio")
+    private val KEY_AVATAR_BASE64 = stringPreferencesKey("profile_avatar_base64")
+    private val KEY_BANNER_BASE64 = stringPreferencesKey("profile_banner_base64")
+    private val KEY_MUSIC_REPEAT_MODE = stringPreferencesKey("music_repeat_mode")
+    private val KEY_MUSIC_SHUFFLE = booleanPreferencesKey("music_shuffle_enabled")
+    private val KEY_MUSIC_SPEED = floatPreferencesKey("music_playback_speed")
+    private val KEY_NAVIGATION_FORMAT = stringPreferencesKey("settings_navigation_format")
+    private val KEY_PASS_COMPLETIONS = longPreferencesKey("pass_november_completions")
+    private val KEY_LOCAL_EXIST_COUNTS = stringPreferencesKey("local_limited_exist_counts")
+    private val KEY_DISMISSED_ANNOUNCEMENT_ID = stringPreferencesKey("dismissed_announcement_id")
+    private val KEY_WIDGET_WEATHER_LABEL = stringPreferencesKey("widget_weather_label")
+    private val KEY_WIDGET_WEATHER_TEMP = longPreferencesKey("widget_weather_temp")
+
+    private val KEY_TURKEYS = longPreferencesKey("thanksgiving_turkeys")
+    private val KEY_TOTAL_TURKEYS = longPreferencesKey("thanksgiving_total_turkeys")
+    private val KEY_FESTIVAL_HOUR = longPreferencesKey("thanksgiving_festival_hour")
+    private val KEY_FESTIVAL_MEGA = booleanPreferencesKey("thanksgiving_festival_mega")
+    private val KEY_GATO_TALKS = longPreferencesKey("thanksgiving_gato_talks")
+    private val KEY_PART2_MAP = booleanPreferencesKey("thanksgiving_part2_map")
+    private val KEY_FEST_Q_HOUR = longPreferencesKey("thanksgiving_q_hour")
+    private val KEY_FEST_Q_CLAIMED = stringPreferencesKey("thanksgiving_q_claimed")
+    private val KEY_FEST_H_PETS = longPreferencesKey("thanksgiving_h_pets")
+    private val KEY_FEST_H_TURKEYS = longPreferencesKey("thanksgiving_h_turkeys")
+    private val KEY_FEST_H_UPGRADES = longPreferencesKey("thanksgiving_h_upgrades")
+    private val KEY_FEST_H_WEATHER = longPreferencesKey("thanksgiving_h_weather")
   }
 }

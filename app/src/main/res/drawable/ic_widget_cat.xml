@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Cat ears & head silhouette -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,4 L8.5,7.2 C9.6,6.8 10.8,6.6 12,6.6 C13.2,6.6 14.4,6.8 15.5,7.2 L20,4 L20,12.5 C20,16.9 16.4,20.5 12,20.5 C7.6,20.5 4,16.9 4,12.5 Z" />
+    <!-- Left eye -->
+    <path
+        android:fillColor="#2D1B14"
+        android:pathData="M8.8,12.5 A1.1,1.1 0 1,1 8.8,14.7 A1.1,1.1 0 1,1 8.8,12.5 Z" />
+    <!-- Right eye -->
+    <path
+        android:fillColor="#2D1B14"
+        android:pathData="M15.2,12.5 A1.1,1.1 0 1,1 15.2,14.7 A1.1,1.1 0 1,1 15.2,12.5 Z" />
+    <!-- Cute nose -->
+    <path
+        android:fillColor="#E06C4D"
+        android:pathData="M11.1,15.3 L12.9,15.3 L12,16.5 Z" />
+</vector>
